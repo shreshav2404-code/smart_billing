@@ -1,0 +1,438 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const qrcode = require('qrcode');
+const { spawn } = require('child_process');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Serve static files from the frontend build directory
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// Utility function to generate OTP
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Database connection
+const db = new sqlite3.Database('../database/smart_retail.db', (err) => {
+  if (err) {
+    console.error(err.message);
+  }
+  console.log('Connected to the SQLite database.');
+});
+
+// Middleware to verify JWT
+const verifyToken = (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ message: 'Access denied' });
+
+  try {
+    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid token' });
+  }
+};
+
+// Middleware to verify if user is an owner
+const verifyOwner = (req, res, next) => {
+  verifyToken(req, res, () => {
+    if (req.user.role !== 'owner') {
+      return res.status(403).json({ message: 'Access denied: Owner only' });
+    }
+    next();
+  });
+};
+
+// Routes
+
+// Auth Routes
+app.post('/api/auth/register', async (req, res) => {
+  const { username, email, password } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    db.run(
+      'INSERT INTO Users (Username, Email, Password) VALUES (?, ?, ?)',
+      [username, email, hashedPassword],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ message: err.message });
+        }
+        res.status(201).json({ message: 'User registered successfully' });
+      }
+    );
+  } catch (err) {
+    res.status(500).json({ message: 'Error hashing password' });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  db.get(
+    'SELECT * FROM Users WHERE Email = ?',
+    [email],
+    async (err, user) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      if (!user) {
+        return res.status(400).json({ message: 'User not found' });
+      }
+      const validPassword = await bcrypt.compare(password, user.Password);
+      if (!validPassword) {
+        return res.status(400).json({ message: 'Invalid password' });
+      }
+      const token = jwt.sign({ id: user.UserID, email: user.Email }, process.env.JWT_SECRET || 'fallback_secret');
+      res.json({ token, user: { id: user.UserID, username: user.Username, email: user.Email } });
+    }
+  );
+});
+
+// Guest Login Route
+app.post('/api/auth/guest-login', (req, res) => {
+  db.get(
+    'SELECT * FROM Users WHERE Email = ?',
+    ['guest@example.com'],
+    async (err, user) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+
+      // If guest user doesn't exist, create one
+      if (!user) {
+        const hashedPassword = await bcrypt.hash('guestpassword123', 10);
+        db.run(
+          'INSERT INTO Users (Username, Email, Password) VALUES (?, ?, ?)',
+          ['Guest', 'guest@example.com', hashedPassword],
+          function (err) {
+            if (err) {
+              return res.status(500).json({ message: 'Could not create guest account' });
+            }
+            const newUserId = this.lastID;
+            const token = jwt.sign({ id: newUserId, email: 'guest@example.com' }, process.env.JWT_SECRET || 'fallback_secret');
+            return res.json({ token, user: { id: newUserId, username: 'Guest', email: 'guest@example.com' } });
+          }
+        );
+      } else {
+        // Guest user exists
+        const token = jwt.sign({ id: user.UserID, email: user.Email, role: user.Role }, process.env.JWT_SECRET || 'fallback_secret');
+        res.json({ token, user: { id: user.UserID, username: user.Username, email: user.Email, role: user.Role } });
+      }
+    }
+  );
+});
+
+// Owner Login Route
+app.post('/api/auth/owner-login', (req, res) => {
+  db.get(
+    'SELECT * FROM Users WHERE Email = ?',
+    ['owner@example.com'],
+    async (err, user) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+
+      // If owner user doesn't exist, create one
+      if (!user) {
+        const hashedPassword = await bcrypt.hash('ownerpassword123', 10);
+        db.run(
+          "INSERT INTO Users (Username, Email, Password, Role) VALUES (?, ?, ?, 'owner')",
+          ['Store Owner', 'owner@example.com', hashedPassword],
+          function (err) {
+            if (err) {
+              return res.status(500).json({ message: 'Could not create owner account' });
+            }
+            const newUserId = this.lastID;
+            const token = jwt.sign({ id: newUserId, email: 'owner@example.com', role: 'owner' }, process.env.JWT_SECRET || 'fallback_secret');
+            return res.json({ token, user: { id: newUserId, username: 'Store Owner', email: 'owner@example.com', role: 'owner' } });
+          }
+        );
+      } else {
+        // Owner user exists
+        const token = jwt.sign({ id: user.UserID, email: user.Email, role: user.Role }, process.env.JWT_SECRET || 'fallback_secret');
+        res.json({ token, user: { id: user.UserID, username: user.Username, email: user.Email, role: user.Role } });
+      }
+    }
+  );
+});
+
+// Product Routes
+app.get('/api/products', (req, res) => {
+  db.all('SELECT * FROM Products', [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
+    res.json(rows);
+  });
+});
+
+// Add a new product (Owner Only)
+app.post('/api/products', verifyOwner, (req, res) => {
+  const { name, price, stock, weight, category } = req.body;
+  if (!name || price == null || stock == null) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  db.run(
+    'INSERT INTO Products (Name, Price, Stock, Weight, Category) VALUES (?, ?, ?, ?, ?)',
+    [name, price, stock, weight, category || 'Others'],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.status(201).json({ message: 'Product added successfully', productId: this.lastID });
+    }
+  );
+});
+
+// Update an existing product (Owner Only)
+app.put('/api/products/:id', verifyOwner, (req, res) => {
+  const productId = req.params.id;
+  const { price, stock } = req.body;
+
+  if (price == null && stock == null) {
+    return res.status(400).json({ message: 'At least one field (price or stock) is required' });
+  }
+
+  let updateQuery = 'UPDATE Products SET ';
+  const updateValues = [];
+
+  if (price != null) {
+    updateQuery += 'Price = ?, ';
+    updateValues.push(price);
+  }
+  if (stock != null) {
+    updateQuery += 'Stock = ?, ';
+    updateValues.push(stock);
+  }
+
+  // Remove trailing comma and space
+  updateQuery = updateQuery.slice(0, -2);
+  updateQuery += ' WHERE ProductID = ?';
+  updateValues.push(productId);
+
+  db.run(updateQuery, updateValues, function (err) {
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    res.json({ message: 'Product updated successfully' });
+  });
+});
+
+// Order History Route
+app.get('/api/orders', verifyToken, (req, res) => {
+  const userId = req.user.id;
+  db.all(
+    `SELECT o.OrderID, o.TotalAmount, o.Status, o.CreatedAt,
+            (SELECT COUNT(*) FROM OrderItems WHERE OrderID = o.OrderID) as ItemCount
+     FROM Orders o 
+     WHERE o.UserID = ? 
+     ORDER BY o.CreatedAt DESC`,
+    [userId],
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.json(rows);
+    }
+  );
+});
+
+// Helper for SQLite queries returning Promises
+const dbGet = (sql, params = []) => new Promise((resolve, reject) => db.get(sql, params, (err, row) => err ? reject(err) : resolve(row)));
+const dbRun = (sql, params = []) => new Promise((resolve, reject) => db.run(sql, params, function (err) { err ? reject(err) : resolve(this) }));
+
+// Checkout Route with Transaction
+app.post('/api/checkout', verifyToken, async (req, res) => {
+  const { items } = req.body; // items: [{productId, quantity}]
+  const userId = req.user.id;
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    let total = 0;
+
+    // Check all products
+    for (const item of items) {
+      const product = await dbGet('SELECT Price, Stock FROM Products WHERE ProductID = ?', [item.productId]);
+      if (!product || product.Stock < item.quantity) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({ message: `Product not found or insufficient stock for product ID ${item.productId}` });
+      }
+      total += product.Price * item.quantity;
+    }
+
+    // Process order
+    const orderResult = await dbRun('INSERT INTO Orders (UserID, TotalAmount, Status) VALUES (?, ?, ?)', [userId, total, 'completed']);
+    const orderId = orderResult.lastID;
+
+    for (const item of items) {
+      await dbRun(
+        'INSERT INTO OrderItems (OrderID, ProductID, Quantity, Price) SELECT ?, ?, ?, Price FROM Products WHERE ProductID = ?',
+        [orderId, item.productId, item.quantity, item.productId]
+      );
+      await dbRun(
+        'UPDATE Products SET Stock = Stock - ? WHERE ProductID = ?',
+        [item.quantity, item.productId]
+      );
+    }
+
+    const otp = generateOTP();
+    await dbRun(
+      'INSERT INTO Payments (OrderID, Amount, Status, OTP) VALUES (?, ?, ?, ?)',
+      [orderId, total, 'completed', otp]
+    );
+
+    await dbRun('COMMIT');
+
+    const qrData = JSON.stringify({ orderId, userId, total }); // REMOVED OTP
+    qrcode.toDataURL(qrData, (err, qrCodeUrl) => {
+      if (err) {
+        return res.status(500).json({ message: 'QR error' });
+      }
+      res.json({ orderId, total, qrCodeUrl });
+    });
+
+  } catch (error) {
+    try {
+      await dbRun('ROLLBACK');
+    } catch (e) { }
+    console.error(error);
+    res.status(500).json({ message: error.message || 'Transaction error' });
+  }
+});
+
+// QR Verification Route
+app.post('/api/verify-qr', (req, res) => {
+  // Support either full QR payload (`qrData`) or OTP-only (`otp`).
+  const { qrData, otp } = req.body;
+
+  // helper to mask OTP in logs (show only last 2 digits)
+  const mask = (s) => (typeof s === 'string' ? s.replace(/.(?=.{2})/g, '*') : s);
+
+  // OTP-only verification: find the payment that matches this OTP
+  if (otp) {
+    console.log(`[${new Date().toISOString()}] OTP verification attempt: ${mask(otp)}`);
+    db.get(
+      'SELECT o.OrderID as orderId, o.Status as orderStatus, p.Status as paymentStatus FROM Payments p JOIN Orders o ON p.OrderID = o.OrderID WHERE p.OTP = ?',
+      [otp],
+      (err, row) => {
+        if (err) {
+          console.error(`[${new Date().toISOString()}] OTP lookup error:`, err.message);
+          return res.status(500).json({ message: err.message });
+        }
+        if (!row) {
+          console.log(`[${new Date().toISOString()}] OTP not found: ${mask(otp)}`);
+          return res.status(404).json({ access: false, message: 'OTP not found' });
+        }
+        const access = row.orderStatus === 'completed' && row.paymentStatus === 'completed';
+        console.log(`[${new Date().toISOString()}] OTP ${mask(otp)} matched order ${row.orderId} access=${access}`);
+        return res.json({ access, orderId: row.orderId, message: access ? 'Access Granted' : 'Invalid or unpaid' });
+      }
+    );
+    return;
+  }
+
+  // Full QR payload path
+  if (!qrData) {
+    return res.status(400).json({ message: 'qrData or otp required' });
+  }
+
+  try {
+    const qrInfo = JSON.parse(qrData);
+    const { orderId } = qrInfo;
+    console.log(`[${new Date().toISOString()}] QR verification attempt for order ${orderId}`);
+    db.get(
+      'SELECT o.Status as orderStatus, p.Status as paymentStatus FROM Orders o JOIN Payments p ON o.OrderID = p.ORDERID WHERE o.OrderID = ?',
+      [orderId],
+      (err, row) => {
+        if (err) {
+          console.error(`[${new Date().toISOString()}] QR lookup error for order ${orderId}:`, err.message);
+          return res.status(500).json({ message: err.message });
+        }
+        if (!row) {
+          console.log(`[${new Date().toISOString()}] Order not found: ${orderId}`);
+          return res.status(404).json({ message: 'Order not found' });
+        }
+        const access = row.orderStatus === 'completed' && row.paymentStatus === 'completed';
+        console.log(`[${new Date().toISOString()}] QR check order ${orderId} access=${access}`);
+        // Do NOT return the OTP value in responses
+        return res.json({ access, orderId, message: access ? 'Access Granted' : 'Invalid or unpaid' });
+      }
+    );
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid qrData payload' });
+  }
+});
+
+// ML Recommendations Route
+app.post('/api/recommendations', async (req, res) => {
+  const { items } = req.body; // array of productIds
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.json([]);
+  }
+
+  // Sanitize input to ensure items are only integers
+  const sanitizedItems = items.map(Number).filter(n => !isNaN(n));
+
+  if (sanitizedItems.length === 0) {
+    return res.json([]);
+  }
+
+  // Use relative path for python executable if possible, or fallback to absolute
+  // Assuming we are running from backend/ directory
+  const pythonPath = process.env.PYTHON_PATH || 'python';
+  const scriptPath = '../ml/recommend.py';
+
+  // It's safer to spawn with sanitized array passed down
+  const pythonProcess = spawn(pythonPath, [scriptPath, JSON.stringify(sanitizedItems)]);
+
+  let data = '';
+  let errorData = '';
+
+  pythonProcess.stdout.on('data', (chunk) => {
+    data += chunk;
+  });
+
+  pythonProcess.stderr.on('data', (chunk) => {
+    errorData += chunk;
+  });
+
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      try {
+        const recommendations = JSON.parse(data);
+        res.json(recommendations);
+      } catch (e) {
+        console.error('Error parsing ML output:', e, data);
+        res.json([]); // Return empty recommendations on parse error
+      }
+    } else {
+      console.error('ML Process exited with code:', code);
+      console.error('Stderr:', errorData);
+      res.json([]); // Return empty recommendations on error
+    }
+  });
+});
+
+// Catch-all route to serve the React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+});
+
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
