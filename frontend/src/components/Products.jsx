@@ -7,6 +7,7 @@ const Products = () => {
   const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
   const [recommendations, setRecommendations] = useState([]);
   const [quantities, setQuantities] = useState({});
+  const [toast, setToast] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categories, setCategories] = useState(['All']);
   const navigate = useNavigate();
@@ -73,7 +74,8 @@ const Products = () => {
       })
       .catch(err => console.log('ML error', err));
       
-    alert(`Added ${quantity} ${product.Name}(s) to cart!`);
+    setToast(`Added ${quantity} ${product.Name}(s) to cart!`);
+    setTimeout(() => setToast(null), 1800);
   };
 
   const updateQuantity = (productId, quantity) => {
@@ -92,6 +94,17 @@ const Products = () => {
 
   return (
     <div>
+      {/* Toast Notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '20px', right: '20px', zIndex: 9999,
+          background: 'linear-gradient(90deg, #059669, #10b981)', color: 'white',
+          padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
+          boxShadow: '0 6px 20px rgba(5,150,105,0.35)', animation: 'fadeInUp 0.3s ease'
+        }}>
+          ✓ {toast}
+        </div>
+      )}
       <h2>Browse Products</h2>
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
         <button onClick={() => navigate('/cart')} style={{ width: 'auto', padding: '10px 18px' }}>🛒 View Cart ({cart.length} items)</button>

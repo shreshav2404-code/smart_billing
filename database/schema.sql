@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS Users (
     Username TEXT UNIQUE NOT NULL,
     Email TEXT UNIQUE NOT NULL,
     Password TEXT NOT NULL,
+    Role TEXT DEFAULT 'customer',
     CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

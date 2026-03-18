@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const QRVerify = () => {
   const [qrData, setQrData] = useState('');
@@ -7,8 +8,55 @@ const QRVerify = () => {
   const [result, setResult] = useState(null);
   const [orderInfo, setOrderInfo] = useState(null);
   const [verifyMode, setVerifyMode] = useState('qr'); // 'qr' or 'otp'
+  const [scannerInitialized, setScannerInitialized] = useState(false);
 
-  const handleVerifyQR = async () => {
+  useEffect(() => {
+    let html5QrcodeScanner = null;
+
+    if (verifyMode === 'qr') {
+      html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        /* verbose= */ false
+      );
+      
+      html5QrcodeScanner.render(
+        async (decodedText, decodedResult) => {
+          setQrData(decodedText);
+          html5QrcodeScanner.pause(true); // Pause scanning once successful
+          
+          try {
+            const res = await axios.post('/api/verify-qr', { qrData: decodedText });
+            setOrderInfo(res.data);
+            if (res.data.access) {
+              setResult('✅ Access Granted - You may proceed');
+            } else {
+              setResult('❌ Access Denied - Invalid Order/OTP');
+              html5QrcodeScanner.resume(); // Resume if invalid
+            }
+          } catch (err) {
+            setResult('⚠️ Error Verifying Order');
+            html5QrcodeScanner.resume(); // Resume if error
+          }
+        },
+        (error) => {
+          // Ignore parse errors, they happen continuously until a QR code is detected
+        }
+      );
+      setScannerInitialized(true);
+    }
+
+    return () => {
+      if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear().catch(error => {
+          console.error("Failed to clear html5QrcodeScanner. ", error);
+        });
+        setScannerInitialized(false);
+      }
+    };
+  }, [verifyMode]);
+
+  const handleVerifyQRManually = async () => {
     try {
       const res = await axios.post('/api/verify-qr', { qrData });
       setOrderInfo(res.data);
@@ -79,21 +127,25 @@ const QRVerify = () => {
 
       {/* QR Code Mode */}
       {verifyMode === 'qr' && (
-        <form onSubmit={(e) => { e.preventDefault(); handleVerifyQR(); }}>
-          <p style={{ color: '#666' }}>Scan the QR code or paste QR data below:</p>
-          <div>
-            <label htmlFor="qrData">QR Code Data:</label>
-            <textarea
-              id="qrData"
-              placeholder='Paste full QR data (JSON format like: {"orderId":1,"userId":1,"total":500})'
-              value={qrData}
-              onChange={(e) => setQrData(e.target.value)}
-              required
-              style={{ width: '100%', height: '100px', padding: '10px', marginBottom: '10px' }}
-            />
+        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+          <p style={{ color: '#666', textAlign: 'center', marginBottom: '15px' }}>Point your camera at the entry QR Code</p>
+          <div id="qr-reader" style={{ width: '100%', maxWidth: '500px', margin: '0 auto', overflow: 'hidden', borderRadius: '8px' }}></div>
+          
+          <div style={{ marginTop: '30px', borderTop: '1px dashed #ccc', paddingTop: '20px' }}>
+            <p style={{ color: '#999', fontSize: '12px', textAlign: 'center' }}>Or verify manually by pasting data below:</p>
+            <form onSubmit={(e) => { e.preventDefault(); handleVerifyQRManually(); }} style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                placeholder='Paste QR data here'
+                value={qrData}
+                onChange={(e) => setQrData(e.target.value)}
+                required
+                style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+              />
+              <button type="submit" style={{ padding: '10px 20px' }}>Verify</button>
+            </form>
           </div>
-          <button type="submit" style={{ width: '100%' }}>Verify QR Code</button>
-        </form>
+        </div>
       )}
 
       {/* OTP Mode */}

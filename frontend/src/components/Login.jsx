@@ -12,6 +12,7 @@ const Login = () => {
     try {
       const res = await axios.post('/api/auth/login', { email, password });
       localStorage.setItem('token', res.data.token);
+      localStorage.setItem('userRole', res.data.user?.role || 'customer');
       navigate('/products');
     } catch (err) {
       alert('Login failed');
@@ -22,6 +23,7 @@ const Login = () => {
     try {
       const res = await axios.post('/api/auth/guest-login');
       localStorage.setItem('token', res.data.token);
+      localStorage.setItem('userRole', 'customer');
       navigate('/products');
     } catch (err) {
       alert('Guest login failed');
@@ -32,6 +34,7 @@ const Login = () => {
     try {
       const res = await axios.post('/api/auth/owner-login');
       localStorage.setItem('token', res.data.token);
+      localStorage.setItem('userRole', 'owner');
       navigate('/owner-dashboard');
     } catch (err) {
       alert('Owner login failed');

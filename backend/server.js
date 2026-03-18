@@ -34,7 +34,7 @@ const verifyToken = (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Access denied' });
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    const verified = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
     req.user = verified;
     next();
   } catch (err) {
@@ -296,12 +296,12 @@ app.post('/api/checkout', verifyToken, async (req, res) => {
 
     await dbRun('COMMIT');
 
-    const qrData = JSON.stringify({ orderId, userId, total }); // REMOVED OTP
+    const qrData = JSON.stringify({ orderId, userId, total, otp }); // Embedded OTP back into QR
     qrcode.toDataURL(qrData, (err, qrCodeUrl) => {
       if (err) {
         return res.status(500).json({ message: 'QR error' });
       }
-      res.json({ orderId, total, qrCodeUrl });
+      res.json({ orderId, total, qrCodeUrl, otp });
     });
 
   } catch (error) {
@@ -376,7 +376,7 @@ app.post('/api/verify-qr', (req, res) => {
   }
 });
 
-// ML Recommendations Route
+// ML Recommendations Route (simple — for Products page)
 app.post('/api/recommendations', async (req, res) => {
   const { items } = req.body; // array of productIds
 
@@ -391,12 +391,9 @@ app.post('/api/recommendations', async (req, res) => {
     return res.json([]);
   }
 
-  // Use relative path for python executable if possible, or fallback to absolute
-  // Assuming we are running from backend/ directory
   const pythonPath = process.env.PYTHON_PATH || 'python';
   const scriptPath = '../ml/recommend.py';
 
-  // It's safer to spawn with sanitized array passed down
   const pythonProcess = spawn(pythonPath, [scriptPath, JSON.stringify(sanitizedItems)]);
 
   let data = '';
@@ -417,12 +414,125 @@ app.post('/api/recommendations', async (req, res) => {
         res.json(recommendations);
       } catch (e) {
         console.error('Error parsing ML output:', e, data);
-        res.json([]); // Return empty recommendations on parse error
+        res.json([]);
       }
     } else {
       console.error('ML Process exited with code:', code);
       console.error('Stderr:', errorData);
-      res.json([]); // Return empty recommendations on error
+      res.json([]);
+    }
+  });
+});
+
+// ML Checkout Recommendations Route (detailed — Apriori with configurable support/confidence)
+app.post('/api/checkout-recommendations', async (req, res) => {
+  const { items, minSupport, minConfidence } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.json({ recommendations: [], metadata: {} });
+  }
+
+  const sanitizedItems = items.map(Number).filter(n => !isNaN(n));
+  if (sanitizedItems.length === 0) {
+    return res.json({ recommendations: [], metadata: {} });
+  }
+
+  const pythonPath = process.env.PYTHON_PATH || 'python';
+  const scriptPath = '../ml/recommend.py';
+
+  // Pass min_support, min_confidence, and 'detailed' mode to the Python script
+  const minSup = (minSupport != null ? parseFloat(minSupport) : 0.05).toString();
+  const minConf = (minConfidence != null ? parseFloat(minConfidence) : 0.1).toString();
+
+  const pythonProcess = spawn(pythonPath, [
+    scriptPath,
+    JSON.stringify(sanitizedItems),
+    minSup,
+    minConf,
+    'detailed'
+  ]);
+
+  let data = '';
+  let errorData = '';
+
+  pythonProcess.stdout.on('data', (chunk) => {
+    data += chunk;
+  });
+
+  pythonProcess.stderr.on('data', (chunk) => {
+    errorData += chunk;
+  });
+
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      try {
+        const result = JSON.parse(data);
+
+        // If result has recommendations, enrich with product details from DB
+        if (result.recommendations && result.recommendations.length > 0) {
+          const productIds = result.recommendations.map(r => r.productId);
+          const placeholders = productIds.map(() => '?').join(',');
+
+          db.all(
+            `SELECT ProductID, Name, Price, Stock, Category FROM Products WHERE ProductID IN (${placeholders})`,
+            productIds,
+            (err, products) => {
+              if (err) {
+                console.error('Error fetching product details:', err);
+                return res.json(result);
+              }
+
+              const productMap = {};
+              products.forEach(p => { productMap[p.ProductID] = p; });
+
+              result.recommendations = result.recommendations
+                .map(rec => {
+                  const product = productMap[rec.productId];
+                  if (!product) return null;
+                  return {
+                    ...rec,
+                    name: product.Name,
+                    price: product.Price,
+                    stock: product.Stock,
+                    category: product.Category
+                  };
+                })
+                .filter(Boolean);
+
+              // Also resolve antecedent names
+              const allAntecedentIds = [...new Set(result.recommendations.flatMap(r => r.antecedents))];
+              if (allAntecedentIds.length > 0) {
+                const antPlaceholders = allAntecedentIds.map(() => '?').join(',');
+                db.all(
+                  `SELECT ProductID, Name FROM Products WHERE ProductID IN (${antPlaceholders})`,
+                  allAntecedentIds,
+                  (err2, antProducts) => {
+                    if (!err2 && antProducts) {
+                      const antMap = {};
+                      antProducts.forEach(p => { antMap[p.ProductID] = p.Name; });
+                      result.recommendations.forEach(rec => {
+                        rec.antecedentNames = rec.antecedents.map(id => antMap[id] || `Product #${id}`);
+                      });
+                    }
+                    res.json(result);
+                  }
+                );
+              } else {
+                res.json(result);
+              }
+            }
+          );
+        } else {
+          res.json(result);
+        }
+      } catch (e) {
+        console.error('Error parsing ML output:', e, data);
+        res.json({ recommendations: [], metadata: {} });
+      }
+    } else {
+      console.error('Checkout ML Process exited with code:', code);
+      console.error('Stderr:', errorData);
+      res.json({ recommendations: [], metadata: {} });
     }
   });
 });

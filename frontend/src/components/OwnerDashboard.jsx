@@ -5,7 +5,38 @@ import { useNavigate } from 'react-router-dom';
 const OwnerDashboard = () => {
     const [products, setProducts] = useState([]);
     const [newProduct, setNewProduct] = useState({ name: '', price: '', stock: '', category: '', weight: '' });
+    const [mlMinSupport, setMlMinSupport] = useState(0.05);
+    const [mlMinConfidence, setMlMinConfidence] = useState(0.3);
+    const [mlTestItems, setMlTestItems] = useState([]);
+    const [mlLoading, setMlLoading] = useState(false);
+    const [mlResults, setMlResults] = useState(null);
     const navigate = useNavigate();
+
+    const toggleMlTestItem = (productId) => {
+        setMlTestItems(prev =>
+            prev.includes(productId)
+                ? prev.filter(id => id !== productId)
+                : [...prev, productId]
+        );
+    };
+
+    const runMlTest = async () => {
+        setMlLoading(true);
+        setMlResults(null);
+        try {
+            const selectedProducts = products.filter(p => mlTestItems.includes(p.ProductID));
+            const res = await axios.post('/api/checkout-recommendations', {
+                cart_items: selectedProducts.map(p => p.Name),
+                min_support: mlMinSupport,
+                min_confidence: mlMinConfidence
+            });
+            setMlResults(res.data);
+        } catch (err) {
+            console.error('ML test error:', err);
+            setMlResults({ recommendations: [], metadata: { error: 'Failed to run algorithm' } });
+        }
+        setMlLoading(false);
+    };
 
     const fetchProducts = async () => {
         try {
@@ -49,6 +80,7 @@ const OwnerDashboard = () => {
 
     const handleLogout = () => {
         localStorage.removeItem('token');
+        localStorage.removeItem('userRole');
         navigate('/');
     };
 
@@ -146,6 +178,126 @@ const OwnerDashboard = () => {
                         ))}
                     </div>
                 </div>
+            </div>
+
+            {/* ML Recommendation Algorithm Settings */}
+            <div style={{ marginTop: '30px', background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f4fd 50%, #f5f0ff 100%)', padding: '28px', borderRadius: '16px', border: '1px solid rgba(30,111,224,0.12)', boxShadow: '0 4px 20px rgba(13,71,161,0.06)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+                    <div style={{ fontSize: '28px', background: 'linear-gradient(135deg, #2b7be9, #7c3aed)', borderRadius: '12px', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(43,123,233,0.25)' }}>🧠</div>
+                    <div>
+                        <h3 style={{ margin: '0 0 4px 0', fontSize: '20px', fontWeight: 700, color: '#0d47a1', textAlign: 'left' }}>ML Recommendation Settings</h3>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#64748b', textAlign: 'left' }}>Configure <strong>Apriori Algorithm</strong> &amp; Association Rule Mining parameters</p>
+                    </div>
+                </div>
+
+                {/* Parameters */}
+                <div style={{ background: 'rgba(255,255,255,0.7)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(30,111,224,0.08)', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '20px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', textAlign: 'left' }}>
+                                Min Support
+                                <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#94a3b8', marginTop: '2px' }}>(How frequently items appear together in transactions)</span>
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <input type="range" min="0.01" max="0.5" step="0.01" value={mlMinSupport} onChange={e => setMlMinSupport(parseFloat(e.target.value))} className="algo-slider" style={{ flex: 1 }} />
+                                <span style={{ fontSize: '15px', fontWeight: 700, color: '#2b7be9', minWidth: '42px', textAlign: 'right' }}>{(mlMinSupport * 100).toFixed(0)}%</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', textAlign: 'left' }}>
+                                Min Confidence
+                                <span style={{ display: 'block', fontSize: '11px', fontWeight: 400, color: '#94a3b8', marginTop: '2px' }}>(Probability of buying B given A is already in cart)</span>
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <input type="range" min="0.01" max="1.0" step="0.01" value={mlMinConfidence} onChange={e => setMlMinConfidence(parseFloat(e.target.value))} className="algo-slider" style={{ flex: 1 }} />
+                                <span style={{ fontSize: '15px', fontWeight: 700, color: '#2b7be9', minWidth: '42px', textAlign: 'right' }}>{(mlMinConfidence * 100).toFixed(0)}%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Simulated Cart */}
+                    <div>
+                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '10px', textAlign: 'left' }}>
+                            Simulated Cart (select products to test)
+                        </label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+                            {products.slice(0, 15).map(p => (
+                                <button
+                                    key={p.ProductID}
+                                    onClick={() => toggleMlTestItem(p.ProductID)}
+                                    style={{
+                                        padding: '6px 14px', borderRadius: '20px', border: '1px solid',
+                                        borderColor: mlTestItems.includes(p.ProductID) ? '#2b7be9' : '#e2e8f0',
+                                        background: mlTestItems.includes(p.ProductID) ? 'linear-gradient(90deg, #2b7be9, #155ecb)' : 'white',
+                                        color: mlTestItems.includes(p.ProductID) ? 'white' : '#475569',
+                                        fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                                        transition: 'all 0.2s', width: 'auto',
+                                        boxShadow: mlTestItems.includes(p.ProductID) ? '0 2px 8px rgba(43,123,233,0.25)' : 'none',
+                                    }}
+                                >
+                                    {p.Name}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={runMlTest}
+                            disabled={mlTestItems.length === 0 || mlLoading}
+                            style={{
+                                padding: '10px 24px', borderRadius: '10px', border: 'none',
+                                background: mlTestItems.length === 0 ? '#e2e8f0' : 'linear-gradient(90deg, #7c3aed, #6d28d9)',
+                                color: mlTestItems.length === 0 ? '#94a3b8' : 'white',
+                                fontSize: '14px', fontWeight: 700, cursor: mlTestItems.length === 0 ? 'not-allowed' : 'pointer',
+                                width: 'auto', transition: 'all 0.2s',
+                            }}
+                        >
+                            {mlLoading ? '⏳ Running Apriori...' : '🔬 Run Algorithm Test'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* ML Results */}
+                {mlResults && (
+                    <div style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(30,111,224,0.08)' }}>
+                        {/* Metadata */}
+                        {mlResults.metadata && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+                                {Object.entries(mlResults.metadata).map(([key, val]) => (
+                                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', border: '1px solid rgba(30,111,224,0.1)', borderRadius: '20px', padding: '5px 14px', fontSize: '12px' }}>
+                                        <span style={{ color: '#94a3b8', fontWeight: 500 }}>{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                        <span style={{ color: '#1e293b', fontWeight: 700 }}>{val}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Recommendation Results */}
+                        {mlResults.recommendations && mlResults.recommendations.length > 0 ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
+                                {mlResults.recommendations.map((rec, i) => (
+                                    <div key={i} style={{ background: 'white', border: '1px solid rgba(30,111,224,0.08)', borderRadius: '12px', padding: '14px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                            <div>
+                                                <span style={{ fontSize: '11px', color: '#08305a', background: '#e9f1ff', padding: '2px 8px', borderRadius: '8px' }}>{rec.category}</span>
+                                                <h4 style={{ margin: '6px 0 2px 0', fontSize: '15px', color: '#1e293b' }}>{rec.name}</h4>
+                                                <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#2b7be9', textAlign: 'left' }}>₹{rec.price}</p>
+                                            </div>
+                                            <div style={{ background: rec.confidence >= 0.7 ? '#059669' : rec.confidence >= 0.4 ? '#d97706' : '#6b7280', color: 'white', fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '12px' }}>
+                                                {(rec.confidence * 100).toFixed(1)}%
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            <span>Support: <strong style={{ color: '#475569' }}>{(rec.support * 100).toFixed(1)}%</strong></span>
+                                            <span>Lift: <strong style={{ color: '#7c3aed' }}>{rec.lift?.toFixed(2)}x</strong></span>
+                                            {rec.antecedentNames && <span>Rule: <strong>{rec.antecedentNames.join(' + ')}</strong> → {rec.name}</span>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p style={{ textAlign: 'center', color: '#94a3b8' }}>No recommendations found. Try lowering thresholds or selecting different products.</p>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
