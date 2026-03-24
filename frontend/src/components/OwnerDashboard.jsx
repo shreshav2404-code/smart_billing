@@ -26,9 +26,9 @@ const OwnerDashboard = () => {
         try {
             const selectedProducts = products.filter(p => mlTestItems.includes(p.ProductID));
             const res = await axios.post('/api/checkout-recommendations', {
-                cart_items: selectedProducts.map(p => p.Name),
-                min_support: mlMinSupport,
-                min_confidence: mlMinConfidence
+                items: selectedProducts.map(p => p.ProductID),
+                minSupport: mlMinSupport,
+                minConfidence: mlMinConfidence
             });
             setMlResults(res.data);
         } catch (err) {
@@ -47,8 +47,32 @@ const OwnerDashboard = () => {
         }
     };
 
+    const fetchMlSettings = async () => {
+        try {
+            const res = await axios.get('/api/settings/ml');
+            if (res.data.minSupport != null) setMlMinSupport(res.data.minSupport);
+            if (res.data.minConfidence != null) setMlMinConfidence(res.data.minConfidence);
+        } catch (err) {
+            console.error('Error fetching ML settings:', err);
+        }
+    };
+
+    const saveMlSettings = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.put('/api/settings/ml', { minSupport: mlMinSupport, minConfidence: mlMinConfidence }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert('ML Settings saved globally! These will now apply to the customer checkout pages.');
+        } catch (err) {
+            alert('Failed to save settings');
+            console.error(err);
+        }
+    };
+
     useEffect(() => {
         fetchProducts();
+        fetchMlSettings();
     }, []);
 
     const handleUpdateProduct = async (id, field, value) => {
@@ -81,6 +105,7 @@ const OwnerDashboard = () => {
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('userRole');
+        localStorage.removeItem('userId');
         navigate('/');
     };
 
@@ -251,6 +276,17 @@ const OwnerDashboard = () => {
                             }}
                         >
                             {mlLoading ? '⏳ Running Apriori...' : '🔬 Run Algorithm Test'}
+                        </button>
+                        <button
+                            onClick={saveMlSettings}
+                            style={{
+                                padding: '10px 24px', borderRadius: '10px', border: 'none', marginLeft: '12px',
+                                background: 'linear-gradient(90deg, #059669, #10b981)', color: 'white',
+                                fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                                width: 'auto', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)'
+                            }}
+                        >
+                            💾 Save Global ML Settings
                         </button>
                     </div>
                 </div>

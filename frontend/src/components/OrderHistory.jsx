@@ -4,6 +4,12 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 const OrderHistory = () => {
+    const handleLogout = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('userId');
+      navigate('/');
+    };
   const [orders, setOrders] = useState([]);
   const navigate = useNavigate();
 
@@ -30,7 +36,10 @@ const OrderHistory = () => {
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2>My Order History</h2>
-        <button onClick={() => navigate('/products')} style={{ padding: '8px 16px' }}>Back to Shop</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => navigate('/products')} style={{ padding: '8px 16px' }}>Back to Shop</button>
+          <button onClick={handleLogout} style={{ padding: '8px 16px', backgroundColor: '#eb4d4b', color: 'white' }}>Logout</button>
+        </div>
       </div>
 
       {orders.length === 0 ? (

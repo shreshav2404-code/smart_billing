@@ -7,12 +7,16 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       const res = await axios.post('/api/auth/login', { email, password });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('userRole', res.data.user?.role || 'customer');
+      if (res.data.user?.id) {
+        localStorage.setItem('userId', res.data.user.id);
+      }
       navigate('/products');
     } catch (err) {
       alert('Login failed');
@@ -24,6 +28,9 @@ const Login = () => {
       const res = await axios.post('/api/auth/guest-login');
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('userRole', 'customer');
+      if (res.data.user?.id) {
+        localStorage.setItem('userId', res.data.user.id);
+      }
       navigate('/products');
     } catch (err) {
       alert('Guest login failed');

@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
+const parseJwt = (token) => {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch (e) {
+    return null;
+  }
+};
+
 const Products = () => {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
@@ -10,7 +18,41 @@ const Products = () => {
   const [toast, setToast] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categories, setCategories] = useState(['All']);
+  const [showProfile, setShowProfile] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const navigate = useNavigate();
+
+  const fetchOrders = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setLoadingOrders(true);
+    try {
+      const res = await axios.get('/api/orders', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setOrders(res.data);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const handleProfileClick = () => {
+    setShowProfile(true);
+    fetchOrders();
+  };
+
+  const getUserDetails = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      return parseJwt(token);
+    }
+    return null;
+  };
+
+  const userDetails = getUserDetails();
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -89,6 +131,8 @@ const Products = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('cart'); // Optional: clear cart on logout
+    localStorage.removeItem('userId');
+    localStorage.removeItem('userRole');
     navigate('/');
   };
 
@@ -109,8 +153,68 @@ const Products = () => {
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
         <button onClick={() => navigate('/cart')} style={{ width: 'auto', padding: '10px 18px' }}>🛒 View Cart ({cart.length} items)</button>
         <button onClick={() => navigate('/orders')} style={{ width: 'auto', padding: '10px 18px' }}>My Orders</button>
-        <button onClick={handleLogout} style={{ width: 'auto', padding: '10px 18px' }}>Logout</button>
+        <button onClick={handleLogout} style={{ width: 'auto', padding: '10px 18px', backgroundColor: '#eb4d4b', color: 'white' }}>Logout</button>
+        <button onClick={handleProfileClick} style={{ width: 'auto', padding: '10px 18px', backgroundColor: '#6c5ce7', color: 'white', marginLeft: 'auto' }}>👤 Account Details</button>
       </div>
+
+      {/* Profile Modal Overlay */}
+      {showProfile && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center'
+        }}>
+          <div style={{
+            backgroundColor: '#fff', borderRadius: '12px', padding: '25px',
+            width: '90%', maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '15px', marginBottom: '15px' }}>
+              <h2 style={{ margin: 0 }}>Customer Account Details</h2>
+              <button onClick={() => setShowProfile(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#888' }}>&times;</button>
+            </div>
+            
+            <div style={{ marginBottom: '25px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+              <p style={{ margin: '5px 0' }}><strong>Email:</strong> {userDetails?.email || 'N/A'}</p>
+              <p style={{ margin: '5px 0' }}><strong>Customer ID:</strong> #{userDetails?.id || localStorage.getItem('userId')}</p>
+              <p style={{ margin: '5px 0' }}><strong>Role:</strong> {localStorage.getItem('userRole') || 'customer'}</p>
+            </div>
+
+            <h3 style={{ borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Order History</h3>
+            {loadingOrders ? (
+              <p>Loading orders...</p>
+            ) : orders.length === 0 ? (
+              <p>No orders found.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {orders.map((order) => (
+                  <div key={order.OrderID} style={{ 
+                    border: '1px solid #ddd', borderRadius: '8px', padding: '15px', backgroundColor: '#fff'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{ fontWeight: 'bold' }}>Order #{order.OrderID}</span>
+                      <span style={{ 
+                        padding: '4px 8px', borderRadius: '12px', fontSize: '12px',
+                        backgroundColor: order.Status === 'completed' ? '#e8f5e9' : '#fff3e0',
+                        color: order.Status === 'completed' ? '#2e7d32' : '#e65100'
+                      }}>
+                        {order.Status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '14px' }}>
+                      <span>Date: {new Date(order.CreatedAt).toLocaleString()}</span>
+                      <span>Items: {order.ItemCount}</span>
+                    </div>
+                    <div style={{ marginTop: '10px', textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: '#155ecb' }}>
+                      Total: ₹{order.TotalAmount}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Category Filter */}
       <div style={{ marginBottom: '20px', padding: '12px', background: 'linear-gradient(90deg,#eef6ff,#f8fbff)', borderRadius: '8px' }}>

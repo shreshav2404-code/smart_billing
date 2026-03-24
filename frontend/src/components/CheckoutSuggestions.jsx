@@ -7,6 +7,7 @@ const CheckoutSuggestions = ({ cart, onAddToCart }) => {
   const [loading, setLoading] = useState(false);
   const [minSupport, setMinSupport] = useState(0.05);
   const [minConfidence, setMinConfidence] = useState(0.1);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [addedItems, setAddedItems] = useState(new Set());
 
@@ -39,8 +40,25 @@ const CheckoutSuggestions = ({ cart, onAddToCart }) => {
   };
 
   useEffect(() => {
-    fetchSuggestions(minSupport, minConfidence);
-  }, [cart]);
+    const loadSettings = async () => {
+      try {
+        const res = await axios.get('/api/settings/ml');
+        if (res.data.minSupport != null) setMinSupport(res.data.minSupport);
+        if (res.data.minConfidence != null) setMinConfidence(res.data.minConfidence);
+      } catch (err) {
+        console.error('Error loading global settings:', err);
+      } finally {
+        setSettingsLoaded(true);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  useEffect(() => {
+    if (settingsLoaded) {
+      fetchSuggestions(minSupport, minConfidence);
+    }
+  }, [cart, settingsLoaded]);
 
   const handleSupportChange = (val) => {
     const v = parseFloat(val);

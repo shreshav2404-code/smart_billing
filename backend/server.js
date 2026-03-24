@@ -24,8 +24,16 @@ const generateOTP = () => {
 const db = new sqlite3.Database('../database/smart_retail.db', (err) => {
   if (err) {
     console.error(err.message);
+  } else {
+    console.log('Connected to the SQLite database.');
+    
+    // Auto-initialize Settings table
+    db.serialize(() => {
+      db.run('CREATE TABLE IF NOT EXISTS Settings (Key TEXT PRIMARY KEY, Value TEXT)');
+      db.run("INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('ML_MIN_SUPPORT', '0.05')");
+      db.run("INSERT OR IGNORE INTO Settings (Key, Value) VALUES ('ML_MIN_CONFIDENCE', '0.1')");
+    });
   }
-  console.log('Connected to the SQLite database.');
 });
 
 // Middleware to verify JWT
@@ -90,8 +98,8 @@ app.post('/api/auth/login', (req, res) => {
       if (!validPassword) {
         return res.status(400).json({ message: 'Invalid password' });
       }
-      const token = jwt.sign({ id: user.UserID, email: user.Email }, process.env.JWT_SECRET || 'fallback_secret');
-      res.json({ token, user: { id: user.UserID, username: user.Username, email: user.Email } });
+      const token = jwt.sign({ id: user.UserID, email: user.Email, role: user.Role }, process.env.JWT_SECRET || 'fallback_secret');
+      res.json({ token, user: { id: user.UserID, username: user.Username, email: user.Email, role: user.Role } });
     }
   );
 });
@@ -110,15 +118,15 @@ app.post('/api/auth/guest-login', (req, res) => {
       if (!user) {
         const hashedPassword = await bcrypt.hash('guestpassword123', 10);
         db.run(
-          'INSERT INTO Users (Username, Email, Password) VALUES (?, ?, ?)',
-          ['Guest', 'guest@example.com', hashedPassword],
+          'INSERT INTO Users (Username, Email, Password, Role) VALUES (?, ?, ?, ?)',
+          ['Guest', 'guest@example.com', hashedPassword, 'customer'],
           function (err) {
             if (err) {
               return res.status(500).json({ message: 'Could not create guest account' });
             }
             const newUserId = this.lastID;
-            const token = jwt.sign({ id: newUserId, email: 'guest@example.com' }, process.env.JWT_SECRET || 'fallback_secret');
-            return res.json({ token, user: { id: newUserId, username: 'Guest', email: 'guest@example.com' } });
+            const token = jwt.sign({ id: newUserId, email: 'guest@example.com', role: 'customer' }, process.env.JWT_SECRET || 'fallback_secret');
+            return res.json({ token, user: { id: newUserId, username: 'Guest', email: 'guest@example.com', role: 'customer' } });
           }
         );
       } else {
@@ -128,6 +136,42 @@ app.post('/api/auth/guest-login', (req, res) => {
       }
     }
   );
+});
+
+// Get current user details
+app.get('/api/users/me', verifyToken, (req, res) => {
+  db.get('SELECT UserID, Username, Email, Role FROM Users WHERE UserID = ?', [req.user.id], (err, user) => {
+    if (err) return res.status(500).json({ message: err.message });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  });
+});
+
+// GET Global ML Settings
+app.get('/api/settings/ml', (req, res) => {
+  db.all("SELECT Key, Value FROM Settings WHERE Key IN ('ML_MIN_SUPPORT', 'ML_MIN_CONFIDENCE')", [], (err, rows) => {
+    if (err) return res.status(500).json({ message: err.message });
+    const settings = {};
+    rows.forEach(row => {
+      if (row.Key === 'ML_MIN_SUPPORT') settings.minSupport = parseFloat(row.Value);
+      if (row.Key === 'ML_MIN_CONFIDENCE') settings.minConfidence = parseFloat(row.Value);
+    });
+    res.json(settings);
+  });
+});
+
+// PUT Global ML Settings (Owner Only)
+app.put('/api/settings/ml', verifyOwner, (req, res) => {
+  const { minSupport, minConfidence } = req.body;
+  if (minSupport == null || minConfidence == null) {
+    return res.status(400).json({ message: 'minSupport and minConfidence are required' });
+  }
+
+  db.serialize(() => {
+    db.run("UPDATE Settings SET Value = ? WHERE Key = 'ML_MIN_SUPPORT'", [minSupport.toString()]);
+    db.run("UPDATE Settings SET Value = ? WHERE Key = 'ML_MIN_CONFIDENCE'", [minConfidence.toString()]);
+  });
+  res.json({ message: 'ML Settings updated globally' });
 });
 
 // Owner Login Route
@@ -144,8 +188,8 @@ app.post('/api/auth/owner-login', (req, res) => {
       if (!user) {
         const hashedPassword = await bcrypt.hash('ownerpassword123', 10);
         db.run(
-          "INSERT INTO Users (Username, Email, Password, Role) VALUES (?, ?, ?, 'owner')",
-          ['Store Owner', 'owner@example.com', hashedPassword],
+          "INSERT INTO Users (Username, Email, Password, Role) VALUES (?, ?, ?, ?)",
+          ['Store Owner', 'owner@example.com', hashedPassword, 'owner'],
           function (err) {
             if (err) {
               return res.status(500).json({ message: 'Could not create owner account' });
@@ -391,37 +435,55 @@ app.post('/api/recommendations', async (req, res) => {
     return res.json([]);
   }
 
-  const pythonPath = process.env.PYTHON_PATH || 'python';
-  const scriptPath = '../ml/recommend.py';
+  try {
+    let minSupVal = 0.05;
+    let minConfVal = 0.1;
+    const supRow = await dbGet("SELECT Value FROM Settings WHERE Key = 'ML_MIN_SUPPORT'");
+    if (supRow && supRow.Value) minSupVal = parseFloat(supRow.Value);
+    const confRow = await dbGet("SELECT Value FROM Settings WHERE Key = 'ML_MIN_CONFIDENCE'");
+    if (confRow && confRow.Value) minConfVal = parseFloat(confRow.Value);
 
-  const pythonProcess = spawn(pythonPath, [scriptPath, JSON.stringify(sanitizedItems)]);
+    const pythonPath = process.env.PYTHON_PATH || 'python';
+    const scriptPath = path.join(__dirname, '../ml/recommend.py');
 
-  let data = '';
-  let errorData = '';
+    const pythonProcess = spawn(pythonPath, [
+      scriptPath, 
+      JSON.stringify(sanitizedItems),
+      minSupVal.toString(),
+      minConfVal.toString(),
+      'simple'
+    ]);
 
-  pythonProcess.stdout.on('data', (chunk) => {
-    data += chunk;
-  });
+    let data = '';
+    let errorData = '';
 
-  pythonProcess.stderr.on('data', (chunk) => {
-    errorData += chunk;
-  });
+    pythonProcess.stdout.on('data', (chunk) => {
+      data += chunk;
+    });
 
-  pythonProcess.on('close', (code) => {
-    if (code === 0) {
-      try {
-        const recommendations = JSON.parse(data);
-        res.json(recommendations);
-      } catch (e) {
-        console.error('Error parsing ML output:', e, data);
+    pythonProcess.stderr.on('data', (chunk) => {
+      errorData += chunk;
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const recommendations = JSON.parse(data);
+          res.json(recommendations);
+        } catch (e) {
+          console.error('Error parsing ML output:', e, data);
+          res.json([]);
+        }
+      } else {
+        console.error('ML Process exited with code:', code);
+        console.error('Stderr:', errorData);
         res.json([]);
       }
-    } else {
-      console.error('ML Process exited with code:', code);
-      console.error('Stderr:', errorData);
-      res.json([]);
-    }
-  });
+    });
+  } catch (err) {
+    console.error('Database error fetching ML settings:', err);
+    res.json([]);
+  }
 });
 
 // ML Checkout Recommendations Route (detailed — Apriori with configurable support/confidence)
@@ -438,11 +500,27 @@ app.post('/api/checkout-recommendations', async (req, res) => {
   }
 
   const pythonPath = process.env.PYTHON_PATH || 'python';
-  const scriptPath = '../ml/recommend.py';
+  const scriptPath = path.join(__dirname, '../ml/recommend.py');
+
+  let minSupVal = minSupport != null ? parseFloat(minSupport) : 0.05;
+  let minConfVal = minConfidence != null ? parseFloat(minConfidence) : 0.1;
+
+  try {
+    if (minSupport == null) {
+      const row = await dbGet("SELECT Value FROM Settings WHERE Key = 'ML_MIN_SUPPORT'");
+      if (row && row.Value) minSupVal = parseFloat(row.Value);
+    }
+    if (minConfidence == null) {
+      const row = await dbGet("SELECT Value FROM Settings WHERE Key = 'ML_MIN_CONFIDENCE'");
+      if (row && row.Value) minConfVal = parseFloat(row.Value);
+    }
+  } catch (dbErr) {
+    console.error('Error fetching defaults from Settings:', dbErr);
+  }
 
   // Pass min_support, min_confidence, and 'detailed' mode to the Python script
-  const minSup = (minSupport != null ? parseFloat(minSupport) : 0.05).toString();
-  const minConf = (minConfidence != null ? parseFloat(minConfidence) : 0.1).toString();
+  const minSup = minSupVal.toString();
+  const minConf = minConfVal.toString();
 
   const pythonProcess = spawn(pythonPath, [
     scriptPath,

@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const Cart = () => {
+    const handleLogout = () => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('cart');
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userRole');
+      navigate('/');
+    };
   const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
   const navigate = useNavigate();
 
@@ -33,6 +40,7 @@ const Cart = () => {
           <p><strong>Total: ₹{total}</strong></p>
           <button onClick={() => navigate('/products')}>Continue Shopping</button>
           <button onClick={() => navigate('/checkout')}>Proceed to Checkout</button>
+          <button onClick={handleLogout} style={{ marginTop: '10px', backgroundColor: '#eb4d4b' }}>Logout</button>
         </>
       )}
     </div>

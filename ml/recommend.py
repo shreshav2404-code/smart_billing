@@ -2,6 +2,9 @@
 import sys
 import json
 import sqlite3
+import warnings
+warnings.filterwarnings('ignore')
+
 import pandas as pd
 from mlxtend.frequent_patterns import apriori, association_rules
 from mlxtend.preprocessing import TransactionEncoder

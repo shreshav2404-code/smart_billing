@@ -16,8 +16,10 @@ function App() {
   return (
     <Router>
       <div className="App">
-        <nav>
-          <h1>Smart Retail Billing System</h1>
+        <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '60px' }}>
+          <div style={{ minWidth: 120, textAlign: 'left' }}></div>
+          <h1 style={{ flex: 1, textAlign: 'center', margin: 0 }}>Smart Retail Billing System</h1>
+          <div style={{ minWidth: 120 }}></div>
         </nav>
         <Routes>
           <Route path="/login" element={<Login />} />
