@@ -21,7 +21,8 @@ const generateOTP = () => {
 };
 
 // Database connection
-const db = new sqlite3.Database('../database/smart_retail.db', (err) => {
+const dbPath = path.join(__dirname, '../database/smart_retail.db');
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error(err.message);
   } else {

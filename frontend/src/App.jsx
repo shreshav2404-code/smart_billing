@@ -9,8 +9,8 @@ import QRVerify from './components/QRVerify';
 import OwnerDashboard from './components/OwnerDashboard';
 import axios from 'axios';
 import './App.css';
-
-axios.defaults.baseURL = 'http://localhost:5001';
+// Fix Axios Base URL for Production vs Development
+axios.defaults.baseURL = import.meta.env.PROD ? '' : 'http://localhost:5001';
 
 function App() {
   return (
