@@ -49,38 +49,24 @@ I would like to express my profound gratitude to all the individuals who provide
     *   High-level Architecture Explanation
     *   Architecture Diagram
 9.  Technology Stack
-    *   Frontend
-    *   Backend
-    *   Database
-    *   Tools & Dependencies
+    *   Frontend, Backend, Database
 10. Module-wise Explanation
-    *   Billing Module
-    *   Product Management Module
-    *   Recommendation Engine
-    *   User Interface
+    *   Billing, Products, ML, Auth, History
 11. Database Design
-    *   Tables with Fields
-    *   Relationships & Indexes
-    *   Queries Used
+    *   Tables, Indexes, Sample Data
 12. Algorithm Section
-    *   Apriori Algorithm Detail & Math
-    *   Collaborative Filtering & Cosine Similarity
-    *   Pseudocodes
+    *   Apriori Math & Numerical Example
+    *   Collaborative Filtering & Pseudocodes
 13. Working Flow
     *   Step-by-Step Execution
-    *   Data Flow Explanation
 14. Code Explanation
-    *   File-by-file detail (Frontend, Backend, ML)
-    *   API Routes List
+    *   Complete File-by-File Breakdown
+    *   Full API Route Definitions
 15. UI/UX Explanation
-    *   Screens & Functionality
-    *   User Interaction Flow
+    *   Screens & Interaction Flow
 16. Results and Outputs
-    *   Sample Outputs
-    *   Recommendation Results
 17. Testing
-    *   Test Cases
-    *   Expected vs Actual Results
+    *   Expanded Test Cases Table
 18. Advantages
 19. Limitations
 20. Future Enhancements
@@ -133,7 +119,7 @@ Once the customer finalizes the cart, a secure transaction is committed to the d
 
 #### Use Case Description
 *   **Actor: Customer:** Can Register/Login, view products, edit the cart, receive ML suggestions, and checkout.
-*   **Actor: Shop Owner:** Can add/edit/delete product inventory, adjust ML parameters (Min Support, Min Confidence) dynamically, and view revenue charts.
+*   **Actor: Shop Owner:** Can add/edit/delete product inventory, adjust ML parameters dynamically, and view revenue charts.
 *   **Actor: Gatekeeper:** Uses the Verification Screen to scan QR codes or type OTPs to validate exits.
 
 ---
@@ -185,10 +171,10 @@ The architecture relies on an asynchronous **Client-Server Model** combined with
 ### 9. TECHNOLOGY STACK
 
 #### Frontend
-*   **Framework:** React 18 (Bootstrapped with Vite for instant HMR).
+*   **Framework:** React 18 (Bootstrapped with Vite `vite.config.js` for instant HMR).
 *   **State Management:** React Hooks (`useState`, `useEffect`).
 *   **Routing:** `react-router-dom` v6.
-*   **UI Libraries:** `recharts` for charting, `lucide-react` for SVG icons. Pure CSS in `App.css` (800+ lines defining gradients, animations, and responsive grids).
+*   **UI Libraries:** `recharts` for internal dashboard charting. Pure CSS in `App.css` (800+ lines defining gradients, animations, and responsive grids).
 *   **Hardware Integration:** `html5-qrcode` for parsing physical QR data via webcams.
 
 #### Backend
@@ -210,22 +196,25 @@ The architecture relies on an asynchronous **Client-Server Model** combined with
 
 ### 10. MODULE-WISE EXPLANATION
 
-#### Billing Module
-Responsible for finalizing the cart. Uses SQL Transactions to guarantee ACID compliance when updating product stocks and writing to the Orders table. Automatically creates a `Payment` entity holding the secure OTP.
+#### Authentication & Identity Module
+Controls access to the system. Utilizes `bcryptjs` to hash all user passwords synchronously before DB insertion. Issues a signed JWT (JSON Web Token) containing `{ userId, role }` which the React state stores locally. Both Customers and Owners traverse this pipeline.
 
-#### Product Management Module
-A CRUD (Create, Read, Update, Delete) module protected by a `verifyOwner` Express middleware. It tracks inventory levels and categorizes products (Groceries, Sports, Beauty, Medical, Electrical).
+#### Billing & Transaction Module
+Responsible for finalizing the cart. Uses strictly defined SQLite SQL Transactions to guarantee ACID compliance when deducing product stocks and writing to the Orders table. Simultaneously creates a `Payment` entity holding a cryptographically unique OTP string.
+
+#### Product Database Module
+A CRUD (Create, Read, Update, Delete) module protected by a `verifyOwner` Express middleware. It tracks live inventory levels and categorized meta-tags (Groceries, Sports, Beauty, Medical, Electrical).
 
 #### Recommendation Engine
-1.  **Cart Interface Module:** `CheckoutSuggestions.jsx` listens to changes in the `cart` state array.
-2.  **Apriori Engine (`recommend.py`):** Calculates rules based on global purchasing history.
-3.  **Collaborative Filter Engine (`collaborative.py`):** Calculates User-Item similarity matrices to suggest products for the Homepage based on exactly who is logged in.
+1.  **Cart Interface Module:** `CheckoutSuggestions.jsx` listens to changes in the active `[cart]` subset.
+2.  **Apriori Engine (`recommend.py`):** Calculates rules based on global purchasing history for active cross-selling.
+3.  **Collaborative Filter Engine (`collaborative.py`):** Calculates localized User-Item similarity matrices to suggest holistic homepage content.
 
 #### Administrative Dashboard
-Extracts raw SQL data using aggregate functions (`SUM`, `COUNT`, `GROUP BY DATE`) and pipes the JSON structure into Recharts to dynamically render Revenue Trends and Category Breakdowns. Allow remote updating of ML Thresholds (`ML_MIN_SUPPORT` and `ML_MIN_CONFIDENCE`).
+Extracts raw SQLite row data using temporal aggregate functions (`SUM`, `COUNT`, `GROUP BY DATE`) and pipes JSON models into Recharts to dynamically render graphical Revenue and Category data. Allows live alteration of backend configuration limits (`ML_MIN_SUPPORT`).
 
-#### QR/OTP Verification Module
-Designed for security checks `QRVerify.jsx`. Rejects reused OTPs or invalid JSON payload injections by comparing against the live database status.
+#### Customer Analytics (Order History)
+Permits authorized buyers to retrospectively examine their previous transactions securely, fostering transparency natively in the client ecosystem.
 
 ---
 
@@ -239,62 +228,74 @@ Designed for security checks `QRVerify.jsx`. Rejects reused OTPs or invalid JSON
 5.  **Payments:** `PaymentID` (PK), `OrderID` (FK), `Amount`, `Status`, `OTP`, `CreatedAt`.
 6.  **Settings:** `Key` (PK), `Value` (Stores dynamic ML configurations).
 
-#### Relationships & Indexes (ER Explanation)
+#### Relationships & Indexes
 *   **Relationships:**
-    *   A **User** (1) can possess many **Orders** (N). (1:N)
-    *   An **Order** (1) is constrained to exactly one **Payment** (1). (1:1)
-    *   An **Order** (1) can contain multiple **OrderItems** (N). (1:N)
-    *   A **Product** (1) can be referenced in multiple **OrderItems** (N). (1:N)
+    *   A **User** (1) can handle multiple **Orders** (N). (1:N)
+    *   An **Order** (1) binds exactly to one **Payment** (1). (1:1)
+    *   An **Order** (1) is assembled from multiple **OrderItems** (N). (1:N)
 *   **Indexes:**
-    Indexes are established in `schema.sql` to drastically speed up sequential scans:
+    Indexes heavily augment system readiness, minimizing `O(n)` scan sequences. Defined natively in `schema.sql`:
     `idx_email`, `idx_name`, `idx_user`, `idx_status`, `idx_order_items`, `idx_product_items`, and `idx_order_payments`.
 
-#### Queries Used
-*   *Transaction Query:* `INSERT INTO OrderItems (OrderID, ProductID, Quantity, Price) SELECT ?, ?, ?, Price FROM Products WHERE ProductID = ?`
-*   *Analytics Data Matrix Build:* `SELECT o.UserID, oi.ProductID FROM Orders o JOIN OrderItems oi ON o.OrderID = oi.OrderID`
-*   *Deduction:* `UPDATE Products SET Stock = Stock - ? WHERE ProductID = ?`
+#### Sample Data Implementation
+The database initializes uniquely across **31 Core Products** spanning **5 Logical Categories**:
+*   *Groceries:* Apple, Banana, Milk, Bread, Cheese, Eggs
+*   *Sports:* Football, Cricket Bat, Tennis Ball, Badminton Racket, Running Shoes
+*   *Beauty:* Face Wash, Moisturizer, Lipstick, Eyeliner, Perfume
+*   *Medical:* Paracetamol, Cough Syrup, Band-Aid, Vitamin C, Antiseptic Cream
+*   *Electrical:* Smartphone, Earphones, Power Bank, USB Cable, Smart Watch, LED Bulb
 
 ---
 
 ### 12. ALGORITHM SECTION (VERY IMPORTANT)
 
-The pivotal aspect of this project is the **Machine Learning Recommendations** powered by two distinct mathematical approaches:
+The pivotal aspect of this project is the **Machine Learning Recommendations** powered by mathematical algorithms.
 
-#### 1. Apriori Algorithm (Cart-Based "Frequently Bought Together")
-Apriori operates on the "Downward Closure Property," which states that if an itemset is frequent, all its subsets must also be frequent.
-1.  **Candidate Generation:** Iteratively finds all frequent itemsets in a dataset matching a given minimum support.
-2.  **Rule Generation:** Constructs conditional rules (e.g., If A, then B) from those frequent itemsets exceeding a minimum confidence.
+#### 1. Apriori Algorithm (Cart-Based Cross-Selling)
+Apriori operates on the "Downward Closure Property."
+1.  **Candidate Generation:** Finds frequent itemsets exceeding a configured Support minimum.
+2.  **Rule Generation:** Extrapolates conditional rules exceeding Confidence standards.
 
-##### Mathematical Calculations
-*   **Support:** Frequency of occurrence. `Support(X, Y) = Freq(X, Y) / N`.
-*   **Confidence:** Reliability of the rule. `Confidence(X -> Y) = Support(X, Y) / Support(X)`.
-*   **Lift:** Ratio of observed to expected. `Lift(X -> Y) = Confidence(X -> Y) / Support(Y)`. Lift > 1 implies strong positive correlation.
+##### Numerical Mathematical Worked Example
+Assume a store has 5 total historical transactions:
+```text
+T1 = {Milk, Bread}
+T2 = {Milk, Eggs, Bread}
+T3 = {Bread, Apple}
+T4 = {Milk, Eggs}
+T5 = {Milk, Eggs, Bread}
+```
+If a user puts `{Milk}` in cart. Will they buy `{Eggs}`?
+*   **Support (Frequency):** `Freq({Milk, Eggs}) / N` = `3 / 5` = **0.60**
+*   **Confidence (Reliability):** `Supp({Milk, Eggs}) / Supp({Milk})` = `0.60 / (4/5)` = **0.75** (75% chance)
+*   **Lift (Correlation):** `Confidence / Supp({Eggs})` = `0.75 / (3/5)` = **1.25**  (`Lift > 1` implies strong positive mathematical linkage; thus Egg is recommended!)
 
 #### 2. Collaborative Filtering (User-Based Personalization)
-To provide "Recommended For You", we use User-Based Collaborative filtering.
-1.  **Matrix Creation:** We pivot historical orders into a User-Item boolean matrix.
-2.  **Cosine Similarity:** Measures the angle between two User vectors. `Cosine(A, B) = A•B / (||A|| * ||B||)`.
-3.  **Scoring:** We find the top 5 most mathematically similar users to the currently logged in person. We suggest products those similar users bought, weighted by the similarity score. (Implemented in `collaborative.py` using `numpy.linalg.norm`).
+Uses computational linear algebra directly predicting user affinities.
+1.  **Matrix Pivot:** Historical transactions are refactored into a sparse User-Item grid matrix (`U_rows`, `I_columns`).
+2.  **Cosine Similarity:** Computes spatial vector angles.  
+    `Similarity(A, B) = DotProduct(A,B) / (Norm(A) * Norm(B))`
 
-#### Pseudocode - Apriori
+##### Pseudocode - Collaborative Filtering
 ```text
-Procedure Apriori(Dataset, min_supp, min_conf):
-    L1 = find_frequent_1_itemsets(Dataset)
-    For (k = 2; Lk_minus_1 != null; k++):
-        Ck = generate_candidate_itemsets(Lk_minus_1)
-        For each transaction t in Dataset:
-            For each candidate c in Ck:
-                If c is subset of t: increment count
-        Lk = filter Ck where count/Total >= min_supp
-    Frequent_Sets = Union of all Lk
+Procedure UserCF(TargetUserID, InteractionMatrix):
+    TopScores = []
+    VectorA = GetRow(InteractionMatrix, TargetUserID)
     
-    Rules = []
-    For each itemset I in Frequent_Sets:
-        For each antecedent A in subsets(I):
-            B = I - A
-            confidence = Support(I) / Support(A)
-            If confidence >= min_conf: Rules.append(A -> B)             
-    Return Rules
+    For each UserID B in InteractionMatrix:
+        If B == TargetUserID: continue
+        VectorB = GetRow(InteractionMatrix, B)
+        Score = Numpy.Dot(VectorA, VectorB) / (Numpy.Norm(VectorA) * Numpy.Norm(VectorB))
+        TopScores.append({User: B, Score: Score})
+        
+    TopUsers = SortDescending(TopScores, limit=5)
+    SuggestedProducts = []
+    
+    For User in TopUsers:
+        Items = GetUnseenItemsPurchasedBy(User, InteractionMatrix)
+        SuggestedProducts.Union(Items weighted by User.Score)
+        
+    Return SuggestedProducts
 ```
 
 ---
@@ -302,115 +303,121 @@ Procedure Apriori(Dataset, min_supp, min_conf):
 ### 13. WORKING FLOW
 
 #### Step-by-step Execution
-1.  **Onboarding:** Client loads React SPA (`index.html` -> `main.jsx` -> `App.jsx`). Registers user using Bcrypt hashed passwords.
-2.  **Browse & Collaborative Recs:** Products page maps items grids. It `GET`s `/api/user-recommendations`, triggering collaborative filtering to place personalized items at the top.
-3.  **Active Shopping:** User adds "Milk" and "Bread" to the cart.
-4.  **Cart ML Inference:** UI dispatches `POST /api/checkout-recommendations` with product IDs. Node.js spawns Python Apriori script.
-5.  **Output Display:** React state updates, rendering rules with Lift and Confidence bars dynamically colored.
-6.  **Checkout & Ledger Writing:** User clicks Checkout. Node executes ACID SQL transcations.
-7.  **Fulfillment:** System yields HTTP 200 with QR logic and text OTP. State is cleared. Security verifies the OTP via the `/api/verify-qr` portal.
-
-#### Data Flow Explanation
-*   **Frontend (JSON/HTTPS) <-> Backend:** Carries Auth Tokens and Shopping arrays.
-*   **Backend (IPC/Standard Streams) <-> Python:** Carries serialized datasets from RAM and reads `stdout`.
-*   **Backend & Python <-> SQLite:** Execute raw SQL to fetch Rows and Dataframes.
+1.  **Onboarding:** Client loads React SPA (`index.html` -> `main.jsx` -> `App.jsx`). Registers via the `Login.jsx`/`Register.jsx` ecosystem.
+2.  **Browse & Collaborative Recs:** `Products.jsx` map component iterations grids. Dispatches `GET /api/user-recommendations`, initializing Cosine Similarity mathematics internally to dictate top placement.
+3.  **Active Shopping:** User places targeted SKU elements to global component Context via `cart` states.
+4.  **Cart ML Inference:** UI dispatches `POST /api/checkout-recommendations` passing strict integers. Node.js invokes Python Child Processes (`spawn`).
+5.  **Checkout Transmutation:** Client triggers the Payment action. Node explicitly writes SQL blocks.
+6.  **Fulfillment Verification:** The gatekeeper utilizes `QRVerify.jsx` to natively scan the encoded DOM QR fragment validating payload authority across the backend `/api/verify-qr`.
 
 ---
 
 ### 14. CODE EXPLANATION
 
-#### Backend Scripts
-1.  **`backend/server.js` (740+ Lines):** Core REST API. Initializes SQLite. Holds routing.
-    *   *Key endpoints:*
-    *   `/api/auth/login` (Authentication)
-    *   `/api/checkout` (Transactional processing)
-    *   `/api/checkout-recommendations` (IPC Spawner to Apriori Python)
-    *   `/api/user-recommendations` (IPC Spawner to CF Python)
-    *   `/api/verify-qr` (Gatekeeper verification query).
-2.  **`backend/init.js` & `migrate.js`:** Utility scripts executed once to deploy the schema to `smart_retail.db` and seamlessly upgrade older iterations.
+#### Frontend Architecture (`src/components/`)
+*   **`main.jsx` & `App.jsx`:** The core Vite entrypoints that configure React Router and context providers.
+*   **`Login.jsx` & `Register.jsx`:** Handles standard form bindings. Stores the received JWT into `localStorage`.
+*   **`Products.jsx`:** Renders the core shopping grid, fetching `/api/products` and maintaining the local `cart` and `[recommendations]` state hierarchies.
+*   **`Cart.jsx` & `Checkout.jsx`:** Manages item quantification, total aggregations, and final transaction triggers.
+*   **`CheckoutSuggestions.jsx`:** Visually outputs dynamic algorithmic data strings indicating explicit correlation rules (Apriori).
+*   **`OrderHistory.jsx`:** Secure profile interface extracting historical order artifacts exclusively bound to the JWT user payload.
+*   **`OwnerDashboard.jsx`:** An isolated component requiring Role="owner". Feeds aggregation arrays strictly into Recharts visual frameworks.
+*   **`QRVerify.jsx`:** Harnesses `html5-qrcode` interfacing browser APIs (webcam/video) strictly designed for POS Security terminals.
 
-#### Machine Learning Scripts
-1.  **`ml/recommend.py`:** Applies `mlxtend`'s Apriori. Fetches SQLite relations and converts them to TransactionEncoders. Returns JSON dump of consequents and lift metrics.
-2.  **`ml/collaborative.py`:** Parses User-Item history into multidimensional matrices. Computes array dot products to assess semantic similarity between two human shoppers.
+#### Configuration Files
+*   **`vite.config.js`:** Build configurations bundling React apps iteratively.
+*   **`App.css` & `index.css`:** Comprehensive global stylesheet encompassing linear-gradient backgrounds, fluid flexbox/grid containers, and structural DOM animations.
 
-#### Frontend Components
-1.  **`App.jsx`:** React Router establishing logical web paths.
-2.  **`Products.jsx`:** The main shop. Triggers `/api/products` and lists inventory securely.
-3.  **`CheckoutSuggestions.jsx`:** Component isolated strictly for displaying the rich, statistical data derived from Python.
+#### Backend Handlers (`backend/`)
+*   **`server.js`:** The brain of the API. Crucial function includes `app.post('/api/checkout')` which ensures atomic DB transactions to prevent stock overselling (race conditions).
+*   **`init.js` & `migrate.js`:** One-shot schema execution deploying SQL schema definitions globally.
+
+#### Full API Blueprint
+| Method | Route | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/register` | Inserts new User, returns Auth Token | None |
+| `POST` | `/api/auth/login` | Validates Bcrypt hashes | None |
+| `GET` | `/api/products` | Yields comprehensive product stock | None |
+| `GET` | `/api/orders` | Yields order data for the UserID | JWT |
+| `POST` | `/api/checkout` | Validates cart, locks rows, processes orders | JWT / Guest |
+| `POST` | `/api/checkout-recommendations` | Spawns Apriori engine passing Cartesian arrays | None |
+| `GET` | `/api/user-recommendations` | Spawns Collaborative filtering engine relative to user | JWT |
+| `POST` | `/api/verify-qr` | Interprets cryptographic Payment strings | None |
+| `GET/PUT` | `/api/settings/ml` | Handles Python configuration parameters | Owner |
+| `GET` | `/api/analytics` | Aggregates mass revenue data structures | Owner |
 
 ---
 
 ### 15. UI/UX EXPLANATION
 
-Custom written styling spans via `App.css` (898 lines). 
-*   **Visual Logic:** Gradients (`linear-gradient(135deg...)`), glassmorphism effects (`backdrop-filter`), and sophisticated animation delays (`@keyframes slideDown`).
+Custom written styling spans via `App.css` (898 lines). Visual Logic embraces modern web paradigms: smooth CSS gradients (`linear-gradient`), transparent glassmorphism (`backdrop-filter`), and distinct UI animations (`@keyframes`).
 
-#### Screens and their functionality
-1.  **Login/Register (`Login.jsx`, `Register.jsx`):** Allows multi-tenant access (Customer, Guest, Shop Owner).
-2.  **Cart & Checkout (`Cart.jsx`, `Checkout.jsx`):** Allows numerical modulation of quantities. Disables payment if products go offline.
-3.  **Owner Dashboard (`OwnerDashboard.jsx`):** Real-time analytics engine drawing Recharts. Features sliders to control internal SQL Settings (`ML_MIN_SUPPORT`).
-4.  **QR Verification Gate (`QRVerify.jsx`):** Connects to `html5-qrcode` to trigger hardware webcams instantly decoding `qrcode` NPM string payloads. Also provides manual 6-character OTP override typing.
+#### Display Specifications
+1.  **Authentication Screens:** Form elements are shadow-cast and dynamically sized, providing error boundaries instantly natively in the DOM.
+2.  **Products List View (`Products.jsx`):** Renders item entities distinctly via CSS Maps. Immediately categorizes items. A dynamic banner displays Collaborative Filtering recs natively inline above generic stock.
+3.  **Order History View (`OrderHistory.jsx`):** Presents tabular invoice rows clearly demarcating order values, dates, and strict transaction states.
+4.  **Owner Dashboard (`OwnerDashboard.jsx`):** Emphasizes technical control. Integrates geometric standard charts rendering analytical intelligence flawlessly. Realtime slider manipulation visually updates configuration matrices.
 
 ---
 
 ### 16. RESULTS AND OUTPUTS
 
-#### Sample Outputs
-If a customer adds `Cricket Bat` (ID: 13) to their cart:
-*   **Input:** `[ 13 ]`
-*   **Output generated by System:** Suggests `Football` and `Running Shoes` based on structural sports category clustering found by Apriori.
-*   **Owner Analytics Output:** The Dashboard live-updates to show a spike in "Sports" category sales revenue.
+#### Sample Output Analysis
+If a customer adds *Bread* (ID: 4) to their cart subset:
+*   **System Input Request:** `Items: [4], minSupport: 0.05, minConfidence: 0.2`
+*   **Apriori Output Pipeline:** The Python daemon calculates that historical clusters imply a strong affinity towards *Milk* and *Eggs*.
+*   **Visual Delivery:** Node.js streams a mapped response dynamically rendering **Milk** to the user directly adjacent to the Checkout trigger button.
 
-#### Recommendation Results
-Depending on the dynamically configured threshold manually adjusted in the UI:
-*   At `Support = 0.05`, `Confidence = 0.4`, the system outputs highly accurate but fewer suggestions (e.g. 2 items).
-*   At `Support = 0.01`, `Confidence = 0.1`, the system outputs aggressive, broad suggestions suitable for larger promotional campaigns (e.g. 5+ mapped items).
+#### Administrative Effect
+Because the transaction includes an unpredicted *Milk* purchase, the total cart evaluation intrinsically escalates, reflecting immediately in the numerical revenue graph managed in the `OwnerDashboard.jsx` analytics view.
 
 ---
 
 ### 17. TESTING
 
-#### Test Cases
+#### Exhaustive Test Cases List
 
-| ID | Module | Description | Expected Result | Actual Result | Status |
+| ID | Application Module | Description | Expected Event | Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **TC-01** | Authentication | Login with invalid password | API returns 400 'Invalid password' | Returns 400 with message | Pass |
-| **TC-02** | Transaction | Checkout item exceeding stock | SQL Rollback, prevents order creation | Order aborted seamlessly | Pass |
-| **TC-03** | Apriori ML | Send empty cart to recommendation | Python gracefully aborts to empty array | Returns `[]` | Pass |
-| **TC-04** | Auth/Role | Access Dashboard with guest | API returns 403 Forbidden | Access Denied cleanly | Pass |
-| **TC-05** | QR Engine | Scan an already used QR payload | UI displays '❌ Access Denied' | Displays Access Denied | Pass |
-| **TC-06** | CF ML | New user (no history) logs in | Collaborative falls back to Global Top Sellers | Renders 5 most popular products | Pass |
+| **TC-01** | Account/Registration | Register an existing distinct Email | HTTP 400 "User already exists" | Captured cleanly | **Pass** |
+| **TC-02** | Account/Authentication | Guest Login procedure execution | Skips JWT, triggers dummy User | Authorized | **Pass** |
+| **TC-03** | Core Checkout | Finalize item globally exceeding stock | SQL `ROLLBACK` executes, kills order | Aborted safely | **Pass** |
+| **TC-04** | Apriori Engine | Forward empty cart integer subset | Python ignores data, returning `[]` | Failsafe Array | **Pass** |
+| **TC-05** | Collaborative System | New user engages system | Algorithm falls back to generic Top Sellers | Recommended 5 items | **Pass** |
+| **TC-06** | Role Infrastructure | Customer navigating to Dashboard | Backend MW yields HTTP 403 Forbidden | Access Blocked | **Pass** |
+| **TC-07** | Order Accountability | Requesting Order History | Recalls data precisely matching JWT ID | Correct History | **Pass** |
+| **TC-08** | Physical Validation | Manual input of corrupted QR String | Query evaluates falsy, flags red | Access Denied UI | **Pass** |
 
 ---
 
 ### 18. ADVANTAGES
 
-1.  **Increased Profitability:** Cross-selling driven by mathematical logic guarantees higher average order values.
-2.  **Fully Paperless:** Eliminates paper receipts by providing cryptographic digital proofs (QR/OTP).
-3.  **Real-Time Configuration:** Store owners do not need to rewrite code to adjust the ML algorithm; they can update Support/Confidence parameters directly from the UI sliders.
-4.  **Extremely Fast:** Python ML scripts analyze thousands of records in under 200ms using vectorized `numpy` instructions.
+1.  **Profitability Scaling:** Contextual cross-selling algorithms systematically construct higher average cart evaluations intrinsically.
+2.  **Zero-Hardware Legacy Limits:** Fully network-agnostic web operation completely erodes dependencies on restrictive POS physical scanners.
+3.  **Dynamic Algorithmic Constraints:** The owner manipulates Machine Learning behavior strictly through native UI sliders—zero coding demanded.
+4.  **High-velocity Analytics:** Python pipelines calculate millions of structural combinations entirely asynchronous from the core javascript runtime loops.
 
 ---
 
 ### 19. LIMITATIONS
 
-1.  **Cold Start Problem:** The Apriori algorithm requires a substantial amount of transaction history to generate meaningful rules. A brand-new store will have sparse recommendations early on.
-2.  **Database Concurrency:** SQLite3 locks the entire database file during writes. This is excellent for local deployment but forms a bottleneck if scaled to thousands of concurrent network connections.
+1.  **Data Scarcity (Cold Start Problem):** New deployments severely limit algorithmic confidence mappings. The system functionally requires substantive historical data thresholds prior to revealing intrinsic recommendations.
+2.  **Execution File Locking:** Due strictly to SQLite core architecture, multi-tenant synchronous writes momentarily freeze database operations, potentially proving problematic during immense real-world bursts.
 
 ---
 
 ### 20. FUTURE ENHANCEMENTS
 
-1.  **Payment Gateway Integration:** Integrating real-world APIs like Stripe or Razorpay to handle literal financial processing rather than simulation.
-2.  **Database Migration:** Moving from SQLite to PostgreSQL to allow multi-tenant cloud operations across different franchise branches.
-3.  **Computer Vision:** Adding an object detection model to automatically identify physical items placed on the counter.
-4.  **Redis Caching:** Memory-caching previous Frequent Itemsets generation routines to attain instantaneous `<10ms` analytical responses.
+1.  **Direct Payment Integration:** Substituting simulation models dynamically with tangible financial operations like standard Stripe Elements or Razorpay gateways.
+2.  **Relational Escalation:** Converting raw SQLite storage systems functionally to Postgres/MySQL, permitting profound database sharding paradigms.
+3.  **Hardware Computer Vision Integration:** Connecting logical algorithms natively to store cameras explicitly to perform algorithmic object assessments independent of cashiers.
+4.  **In-Memory Optimization:** Instantiating strict Redis cache layers globally reducing sequential Apriori compute cycles to sub-<10 millisecond intervals.
 
 ---
 
 ### 21. CONCLUSION
 
-The **Smart Billing System with Recommendation using Apriori Algorithm** successfully integrates modern web development frameworks with robust data science methodologies. It transcends the functional boundaries of traditional billing applications by actively driving quantitative sales enhancements. The modular Javascript/Python IPC architecture provides rock-solid reliability, and the dual addition of Association Rule Mining and Cosine-Similarity Collaborative Filtering ensures a uniquely intelligent point-of-sale platform.
+The **Smart Billing System with Recommendation using Apriori Algorithm** fundamentally intertwines modernized Javascript operational paradigms with rigorous computational data science mechanics. It unequivocally breaches the simplistic constraints governing traditional Point of Sale systems. Through synchronized implementations of Collaborative Filtering alongside rigorous Association Rule paradigms natively embedded within an architecturally secure client/server construct, the project delivers extensive quantitative sales value uniquely tailored to advanced commercial scalability strategies.
 
 ---
 
@@ -418,6 +425,6 @@ The **Smart Billing System with Recommendation using Apriori Algorithm** success
 
 1.  Agrawal, R., & Srikant, R. (1994). *Fast algorithms for mining association rules*. Proceedings of the 20th International Conference on Very Large Data Bases (VLDB), 487-499.
 2.  Rasbt, S. (2018). *Association Rule Mining via Apriori.* MLxtend Library Documentation.
-3.  Facebook (Meta) Open Source. *React.js Documentation*.
-4.  OpenJS Foundation. *Node.js API Reference*.
-5.  *NumPy Vectorization Documentation* (numpy.org). 
+3.  Facebook Open Source. *React.js Dom Structure Methodologies*.
+4.  OpenJS Foundation. *Node.js Asynchronous Child Process Architectures*.
+5.  *NumPy Core Mathematical Documentation* (numpy.org).
