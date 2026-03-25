@@ -8,7 +8,7 @@
 
 **Project Title:** Smart Billing System with Recommendation using Apriori Algorithm  
 **Author:** Keshav Jha  
-**Course/Degree:** Final Year Engineering Project  
+**Course/Degree:** MINI Engineering Project  
 **Date:** March 2026  
 **Core Technologies:** React.js, Node.js, Express, SQLite, Python, Machine Learning (Apriori & Collaborative Filtering)
 
