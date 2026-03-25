@@ -14,6 +14,7 @@ const Products = () => {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
   const [recommendations, setRecommendations] = useState([]);
+  const [userRecommendations, setUserRecommendations] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [toast, setToast] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -21,6 +22,7 @@ const Products = () => {
   const [showProfile, setShowProfile] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingUserRecs, setLoadingUserRecs] = useState(false);
   const navigate = useNavigate();
 
   const fetchOrders = async () => {
@@ -73,6 +75,27 @@ const Products = () => {
     };
     fetchProducts();
   }, []);
+
+  // Fetch Personalized Recommendations (Collaborative Filtering)
+  useEffect(() => {
+    const fetchUserRecommendations = async () => {
+      const token = localStorage.getItem('token');
+      if (!token || userDetails?.role === 'owner') return;
+      
+      setLoadingUserRecs(true);
+      try {
+        const res = await axios.get('/api/user-recommendations', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setUserRecommendations(res.data);
+      } catch (err) {
+        console.error('Error fetching user recommendations:', err);
+      } finally {
+        setLoadingUserRecs(false);
+      }
+    };
+    fetchUserRecommendations();
+  }, []); // Run once on mount
 
   // Fetch recommendations on mount if cart has items
   useEffect(() => {
@@ -238,6 +261,44 @@ const Products = () => {
           ))}
         </div>
       </div>
+
+      {/* User Personalized Recommendations */}
+      {userDetails && userDetails.role !== 'owner' && (userRecommendations.length > 0 || loadingUserRecs) && (
+        <div style={{ marginBottom: '40px', padding: '20px', background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)', borderRadius: '12px', border: '1px solid #dee2e6' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+            <span style={{ fontSize: '24px' }}>🌟</span>
+            <h3 style={{ margin: 0, color: '#2b7be9' }}>Recommended For You</h3>
+          </div>
+          <p style={{ margin: '0 0 15px 0', color: '#6c757d', fontSize: '14px' }}>Inspired by your trends and users like you.</p>
+          
+          {loadingUserRecs ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>Loading personalized insights...</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', justifyContent: 'flex-start' }}>
+              {userRecommendations.map((prod, idx) => (
+                <div key={prod.ProductID} style={{ 
+                  flex: '0 1 calc(20% - 12px)', minWidth: '160px', 
+                  background: 'white', padding: '15px', borderRadius: '10px', 
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0',
+                  position: 'relative', overflow: 'hidden'
+                }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, background: '#ffc107', color: '#000', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderBottomRightRadius: '8px' }}>
+                    Top Pick #{idx + 1}
+                  </div>
+                  <div style={{ marginTop: '15px' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>{prod.Category}</span>
+                    <h4 style={{ margin: '4px 0', fontSize: '15px', color: '#1e293b' }}>{prod.Name}</h4>
+                    <p style={{ margin: '0 0 10px 0', color: '#2b7be9', fontWeight: 'bold', fontSize: '16px' }}>₹{prod.Price}</p>
+                    <button onClick={() => addToCart(prod)} style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'linear-gradient(90deg, #4f46e5, #3b82f6)', border: 'none', color: 'white', borderRadius: '6px', cursor: 'pointer' }}>
+                      Add to Cart
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Products */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '30px', justifyContent: 'center' }}>

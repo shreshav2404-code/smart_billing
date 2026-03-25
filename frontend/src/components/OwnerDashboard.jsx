@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, ResponsiveContainer } from 'recharts';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 const OwnerDashboard = () => {
     const [products, setProducts] = useState([]);
@@ -10,6 +13,7 @@ const OwnerDashboard = () => {
     const [mlTestItems, setMlTestItems] = useState([]);
     const [mlLoading, setMlLoading] = useState(false);
     const [mlResults, setMlResults] = useState(null);
+    const [analyticsData, setAnalyticsData] = useState(null);
     const navigate = useNavigate();
 
     const toggleMlTestItem = (productId) => {
@@ -57,6 +61,18 @@ const OwnerDashboard = () => {
         }
     };
 
+    const fetchAnalytics = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get('/api/analytics', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setAnalyticsData(res.data);
+        } catch (err) {
+            console.error('Error fetching analytics:', err);
+        }
+    };
+
     const saveMlSettings = async () => {
         try {
             const token = localStorage.getItem('token');
@@ -73,6 +89,7 @@ const OwnerDashboard = () => {
     useEffect(() => {
         fetchProducts();
         fetchMlSettings();
+        fetchAnalytics();
     }, []);
 
     const handleUpdateProduct = async (id, field, value) => {
@@ -117,6 +134,92 @@ const OwnerDashboard = () => {
                     Logout
                 </button>
             </div>
+
+            {/* Analytics Dashboard Section */}
+            {analyticsData && (
+                <div style={{ marginBottom: '40px' }}>
+                    
+                    {/* KPI Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+                        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <div style={{ fontSize: '24px', background: '#e3f2fd', color: '#1976d2', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>💰</div>
+                            <div>
+                                <p style={{ margin: 0, color: '#7f8c8d', fontSize: '14px', fontWeight: 'bold' }}>Total Revenue</p>
+                                <h3 style={{ margin: '5px 0 0 0', color: '#2c3e50', fontSize: '24px' }}>₹{analyticsData.kpis.totalRevenue?.toLocaleString() || 0}</h3>
+                            </div>
+                        </div>
+                        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <div style={{ fontSize: '24px', background: '#e8f5e9', color: '#388e3c', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>📦</div>
+                            <div>
+                                <p style={{ margin: 0, color: '#7f8c8d', fontSize: '14px', fontWeight: 'bold' }}>Total Orders</p>
+                                <h3 style={{ margin: '5px 0 0 0', color: '#2c3e50', fontSize: '24px' }}>{analyticsData.kpis.totalOrders}</h3>
+                            </div>
+                        </div>
+                        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <div style={{ fontSize: '24px', background: '#fff3e0', color: '#f57c00', width: '50px', height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}>🛍️</div>
+                            <div>
+                                <p style={{ margin: 0, color: '#7f8c8d', fontSize: '14px', fontWeight: 'bold' }}>Items Sold</p>
+                                <h3 style={{ margin: '5px 0 0 0', color: '#2c3e50', fontSize: '24px' }}>{analyticsData.kpis.totalItemsSold}</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Charts Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 2fr) minmax(300px, 1fr)', gap: '30px' }}>
+                        
+                        {/* Revenue Over Time Line Chart */}
+                        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee' }}>
+                            <h3 style={{ marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Daily Revenue Trend</h3>
+                            <div style={{ height: 300, width: '100%' }}>
+                                <ResponsiveContainer>
+                                    <LineChart data={analyticsData.revenueOverTime} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                        <XAxis dataKey="date" tick={{fontSize: 12, fill: '#7f8c8d'}} axisLine={{stroke: '#ddd'}} tickLine={false} />
+                                        <YAxis tick={{fontSize: 12, fill: '#7f8c8d'}} axisLine={{stroke: '#ddd'}} tickLine={false} tickFormatter={(value) => `₹${value}`} />
+                                        <Tooltip formatter={(value) => [`₹${value}`, 'Revenue']} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                        <Line type="monotone" dataKey="revenue" stroke="#3498db" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Top Products Bar Chart */}
+                        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee' }}>
+                            <h3 style={{ marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Top Selling Products</h3>
+                            <div style={{ height: 300, width: '100%' }}>
+                                <ResponsiveContainer>
+                                    <BarChart data={analyticsData.topProducts} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#eee" />
+                                        <XAxis type="number" tick={{fontSize: 12, fill: '#7f8c8d'}} axisLine={{stroke: '#ddd'}} tickLine={false} />
+                                        <YAxis dataKey="name" type="category" tick={{fontSize: 11, fill: '#2c3e50'}} axisLine={{stroke: '#ddd'}} tickLine={false} />
+                                        <Tooltip cursor={{fill: 'rgba(0,0,0,0.02)'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                        <Bar dataKey="totalSold" fill="#2ecc71" barSize={20} radius={[0, 4, 4, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Category Breakdown Pie Chart */}
+                        <div style={{ background: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #eee', gridColumn: '1 / -1' }}>
+                            <h3 style={{ marginTop: 0, color: '#2c3e50', marginBottom: '20px' }}>Revenue by Category</h3>
+                            <div style={{ height: 300, width: '100%' }}>
+                                <ResponsiveContainer>
+                                    <PieChart>
+                                        <Pie data={analyticsData.categoryData} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} outerRadius={100} fill="#8884d8" dataKey="value">
+                                            {analyticsData.categoryData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip formatter={(value) => [`₹${value}`, 'Revenue']} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                        <Legend verticalAlign="bottom" height={36} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 2fr', gap: '30px' }}>
                 {/* Add Product Form */}

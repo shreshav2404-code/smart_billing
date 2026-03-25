@@ -274,6 +274,63 @@ app.put('/api/products/:id', verifyOwner, (req, res) => {
   });
 });
 
+// Analytics Dashboard Endpoint (Owner Only)
+app.get('/api/analytics', verifyOwner, async (req, res) => {
+  try {
+    // 1. KPIs
+    const kpis = await dbGet("SELECT COUNT(*) as totalOrders, SUM(TotalAmount) as totalRevenue, (SELECT SUM(Quantity) FROM OrderItems oi JOIN Orders o ON oi.OrderID = o.OrderID WHERE o.Status = 'completed') as totalItemsSold FROM Orders WHERE Status = 'completed'");
+
+    // 2. Revenue Over Time (Group by Date)
+    const revenueOverTime = await new Promise((resolve, reject) => {
+      db.all("SELECT DATE(CreatedAt) as date, SUM(TotalAmount) as revenue FROM Orders WHERE Status = 'completed' GROUP BY DATE(CreatedAt) ORDER BY date ASC LIMIT 30", [], (err, rows) => {
+        err ? reject(err) : resolve(rows);
+      });
+    });
+
+    // 3. Top Products (By Quantity Sold)
+    const topProducts = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT p.Name as name, SUM(oi.Quantity) as totalSold 
+        FROM OrderItems oi 
+        JOIN Products p ON oi.ProductID = p.ProductID 
+        JOIN Orders o ON oi.OrderID = o.OrderID 
+        WHERE o.Status = 'completed' 
+        GROUP BY oi.ProductID 
+        ORDER BY totalSold DESC 
+        LIMIT 5
+      `, [], (err, rows) => err ? reject(err) : resolve(rows));
+    });
+
+    // 4. Category Breakdown
+    const categoryData = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT p.Category as name, SUM(oi.Quantity * oi.Price) as value 
+        FROM OrderItems oi 
+        JOIN Products p ON oi.ProductID = p.ProductID 
+        JOIN Orders o ON oi.OrderID = o.OrderID 
+        WHERE o.Status = 'completed' 
+        GROUP BY p.Category 
+        ORDER BY value DESC
+      `, [], (err, rows) => err ? reject(err) : resolve(rows));
+    });
+
+    res.json({
+      kpis: {
+        totalOrders: kpis.totalOrders || 0,
+        totalRevenue: kpis.totalRevenue || 0,
+        totalItemsSold: kpis.totalItemsSold || 0
+      },
+      revenueOverTime: revenueOverTime || [],
+      topProducts: topProducts || [],
+      categoryData: categoryData || []
+    });
+
+  } catch (err) {
+    console.error('Analytics Error:', err);
+    res.status(500).json({ message: 'Failed to fetch analytics' });
+  }
+});
+
 // Order History Route
 app.get('/api/orders', verifyToken, (req, res) => {
   const userId = req.user.id;
@@ -611,6 +668,65 @@ app.post('/api/checkout-recommendations', async (req, res) => {
       console.error('Checkout ML Process exited with code:', code);
       console.error('Stderr:', errorData);
       res.json({ recommendations: [], metadata: {} });
+    }
+  });
+});
+
+// User Collaborative Recommendations Route
+app.get('/api/user-recommendations', verifyToken, async (req, res) => {
+  const userId = req.user.id;
+  
+  const pythonPath = process.env.PYTHON_PATH || 'python';
+  const scriptPath = path.join(__dirname, '../ml/collaborative.py');
+
+  const pythonProcess = spawn(pythonPath, [
+    scriptPath,
+    userId.toString()
+  ]);
+
+  let data = '';
+  let errorData = '';
+
+  pythonProcess.stdout.on('data', (chunk) => {
+    data += chunk;
+  });
+
+  pythonProcess.stderr.on('data', (chunk) => {
+    errorData += chunk;
+  });
+
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      try {
+        const productIds = JSON.parse(data);
+        if (productIds.length > 0) {
+          const placeholders = productIds.map(() => '?').join(',');
+          db.all(
+            `SELECT ProductID, Name, Price, Stock, Category FROM Products WHERE ProductID IN (${placeholders})`,
+            productIds,
+            (err, products) => {
+              if (err) {
+                console.error('Error fetching rec product details:', err);
+                return res.json([]);
+              }
+              // Return in the original order matching backend similarity ranking
+              const productMap = {};
+              products.forEach(p => { productMap[p.ProductID] = p; });
+              const sortedProducts = productIds.map(id => productMap[id]).filter(Boolean);
+              res.json(sortedProducts);
+            }
+          );
+        } else {
+          res.json([]);
+        }
+      } catch (e) {
+        console.error('Error parsing collaborative ML output:', e, data);
+        res.json([]);
+      }
+    } else {
+      console.error('Collaborative ML Process exited with code:', code);
+      console.error('Stderr:', errorData);
+      res.json([]);
     }
   });
 });
