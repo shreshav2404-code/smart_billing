@@ -1,0 +1,9 @@
+# Railway-specific configuration
+{
+  "build": {
+    "builder": "dockerfile"
+  },
+  "deploy": {
+    "startCommand": "cd backend && node server.js"
+  }
+}
