@@ -1,0 +1,23 @@
+app = "smart-billing"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  PYTHON_PATH = "python3"
+  DATABASE_PATH = "/data/smart_retail.db"
+
+[mounts]
+  source = "sqlite_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
