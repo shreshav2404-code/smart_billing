@@ -31,7 +31,7 @@ RUN npm run build
 WORKDIR /app/backend
 
 # Expose port
-EXPOSE 3000
+EXPOSE 7860
 
 # Start the application
 CMD ["sh", "-c", "node init.js && exec node server.js"]
