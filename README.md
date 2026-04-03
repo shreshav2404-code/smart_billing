@@ -1,3 +1,12 @@
+---
+title: Smart Billing
+emoji: 🛒
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # Smart Retail Billing System
 
 A full-stack mini project demonstrating a retail billing system with ML-based recommendations, concurrent transaction handling, and QR code verification.
