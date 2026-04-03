@@ -12,7 +12,7 @@ COPY ml/requirements.txt ./ml/
 
 # Install Node dependencies (production)
 RUN cd backend && npm ci --omit=dev
-RUN cd frontend && npm ci --omit=dev
+RUN cd frontend && npm ci
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --break-system-packages -r ml/requirements.txt
