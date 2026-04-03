@@ -70,26 +70,39 @@ const Checkout = () => {
 
   if (qrCode) {
     return (
-      <div className="checkout-success">
-        <div className="success-icon-circle">
-          <span className="success-checkmark">✓</span>
+      <div className="max-w-xl mx-auto bg-white p-8 sm:p-12 rounded-3xl shadow-xl text-center transform hover:scale-[1.01] transition-transform">
+        <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/40">
+          <span className="text-4xl text-white">✓</span>
         </div>
-        <h2>Order Completed Successfully!</h2>
-        <p className="success-order-id">
-          Order ID: <strong>#{orderId}</strong>
+        <h2 className="text-3xl font-black text-slate-800 mb-2">Order Confirmed!</h2>
+        <p className="text-lg text-slate-500 mb-8">
+          Order ID: <span className="font-bold text-slate-800 tracking-wide">#{orderId}</span>
         </p>
-        <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '18px' }}>
-          Your verification OTP is: <strong style={{ color: '#1e293b', fontSize: '24px', letterSpacing: '2px' }}>{otp}</strong>
-        </p>
-        <p style={{ color: '#64748b', marginBottom: '10px' }}>
+
+        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8">
+          <p className="text-slate-500 font-medium mb-2">Your verification OTP is:</p>
+          <p className="text-5xl font-black text-blue-600 tracking-[0.25em]">{otp}</p>
+        </div>
+
+        <p className="text-slate-500 font-medium mb-6">
           Scan this QR code or provide the OTP at the gate for verification.
         </p>
-        <img src={qrCode} alt="QR Code" className="qr-code-img" />
-        <div className="success-actions">
-          <button onClick={() => navigate('/verify')} className="btn-verify">
-            🔍 Go to Verification Page
+        
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 inline-block mb-10">
+          <img src={qrCode} alt="QR Code" className="w-56 h-56 object-contain" />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <button 
+            onClick={() => navigate('/verify')}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors w-full sm:w-auto"
+          >
+            🔍 Go to Verify
           </button>
-          <button onClick={() => navigate('/products')} className="btn-continue">
+          <button 
+            onClick={() => navigate('/products')}
+            className="px-6 py-3 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl transition-colors w-full sm:w-auto"
+          >
             🛍️ Continue Shopping
           </button>
         </div>
@@ -98,89 +111,96 @@ const Checkout = () => {
   }
 
   return (
-    <div className="checkout-page">
-      <h2>🛒 Checkout</h2>
+    <div className="max-w-5xl mx-auto py-8">
+      <h2 className="text-3xl font-bold text-slate-800 mb-8">🛒 Checkout</h2>
 
       {cart.length === 0 ? (
-        <div className="checkout-empty">
-          <p>Your cart is empty.</p>
-          <button onClick={() => navigate('/products')}>Browse Products</button>
+        <div className="bg-white p-12 rounded-3xl shadow-sm text-center border border-slate-100">
+          <p className="text-xl text-slate-600 mb-6">Your cart is empty.</p>
+          <button 
+            onClick={() => navigate('/products')}
+            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-colors"
+          >
+            Browse Products
+          </button>
         </div>
       ) : (
-        <>
-          {/* ML Suggestions Section - Before order summary */}
-          <CheckoutSuggestions cart={cart} onAddToCart={handleAddSuggestion} />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          <div className="lg:col-span-8 flex flex-col gap-6">
+            {/* The ML suggestions component will render naturally, but it might need to be styled inside its own source. Let's wrap it nicely */}
+            <div className="bg-white/50 backdrop-blur rounded-3xl overflow-hidden border border-slate-100">
+               <CheckoutSuggestions cart={cart} onAddToCart={handleAddSuggestion} />
+            </div>
+          </div>
 
-          {/* Order Summary */}
-          <div className="checkout-summary">
-            <h3>📋 Order Summary</h3>
-            <div className="summary-items">
-              {cart.map((item, index) => (
-                <div key={index} className="summary-item">
-                  <div className="summary-item-info">
-                    <span className="summary-item-category">{item.Category}</span>
-                    <span className="summary-item-name">{item.Name}</span>
-                  </div>
-                  <div className="summary-item-controls">
-                    <div className="qty-control">
-                      <button
-                        className="qty-btn"
-                        onClick={() => updateQuantity(index, (item.quantity || 1) - 1)}
+          <div className="lg:col-span-4">
+            <div className="bg-white rounded-3xl shadow-sm p-6 sm:p-8 border border-slate-100 sticky top-6">
+              <h3 className="text-xl font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">📋 Order Summary</h3>
+              
+              <div className="flex flex-col gap-3 mb-6 max-h-[400px] overflow-y-auto pr-2">
+                {cart.map((item, index) => (
+                  <div key={index} className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div className="flex-1 w-full">
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full mb-1 inline-block uppercase">
+                        {item.Category}
+                      </span>
+                      <p className="font-semibold text-slate-800 text-sm leading-tight">{item.Name}</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between">
+                      <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
+                        <button className="w-7 h-7 flex justify-center items-center font-bold text-slate-500 hover:bg-slate-100" onClick={() => updateQuantity(index, (item.quantity || 1) - 1)}>−</button>
+                        <span className="w-6 text-center text-xs font-bold text-slate-800">{item.quantity || 1}</span>
+                        <button className="w-7 h-7 flex justify-center items-center font-bold text-slate-500 hover:bg-slate-100" onClick={() => updateQuantity(index, (item.quantity || 1) + 1)}>+</button>
+                      </div>
+                      
+                      <span className="font-bold text-slate-800 text-sm w-12 text-right">
+                        ₹{(item.Price * (item.quantity || 1)).toFixed(0)}
+                      </span>
+                      
+                      <button 
+                        className="w-7 h-7 flex justify-center items-center bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+                        onClick={() => removeFromCart(index)}
                       >
-                        −
-                      </button>
-                      <span className="qty-value">{item.quantity || 1}</span>
-                      <button
-                        className="qty-btn"
-                        onClick={() => updateQuantity(index, (item.quantity || 1) + 1)}
-                      >
-                        +
+                        ✕
                       </button>
                     </div>
-                    <span className="summary-item-price">
-                      ₹{(item.Price * (item.quantity || 1)).toFixed(0)}
-                    </span>
-                    <button
-                      className="remove-btn"
-                      onClick={() => removeFromCart(index)}
-                      title="Remove item"
-                    >
-                      ✕
-                    </button>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+
+              <div className="border-t border-slate-100 pt-6 mb-8 flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Total Amount</span>
+                <span className="text-3xl font-black text-slate-800">₹{total.toFixed(0)}</span>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleCheckout}
+                  disabled={isProcessing}
+                  className="w-full py-4 px-6 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transform hover:-translate-y-0.5 transition-all focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    '💳 Confirm & Pay'
+                  )}
+                </button>
+
+                <button
+                  onClick={() => navigate('/products')}
+                  className="w-full py-3 px-6 bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl transition-all"
+                >
+                  ← Continue Shopping
+                </button>
+              </div>
             </div>
-
-            <div className="summary-divider"></div>
-
-            <div className="summary-total">
-              <span>Total Amount</span>
-              <span className="total-price">₹{total.toFixed(0)}</span>
-            </div>
-
-            <button
-              onClick={handleCheckout}
-              className="checkout-pay-btn"
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <span className="btn-spinner"></span> Processing...
-                </>
-              ) : (
-                '💳 Confirm & Pay'
-              )}
-            </button>
-
-            <button
-              onClick={() => navigate('/products')}
-              className="checkout-back-btn"
-            >
-              ← Continue Shopping
-            </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,16 +1,10 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
+@import "tailwindcss";
 
-/* Ensure content is centered horizontally with comfortable vertical spacing */
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 min-h-screen m-0 pt-4 flex flex-col;
+  }
+  #root {
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
 }

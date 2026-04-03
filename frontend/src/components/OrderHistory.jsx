@@ -1,17 +1,17 @@
-
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 const OrderHistory = () => {
-    const handleLogout = () => {
-      localStorage.removeItem('token');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('userId');
-      navigate('/');
-    };
   const [orders, setOrders] = useState([]);
   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userId');
+    navigate('/');
+  };
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -33,45 +33,61 @@ const OrderHistory = () => {
   }, [navigate]);
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>My Order History</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => navigate('/products')} style={{ padding: '8px 16px' }}>Back to Shop</button>
-          <button onClick={handleLogout} style={{ padding: '8px 16px', backgroundColor: '#eb4d4b', color: 'white' }}>Logout</button>
+    <div className="max-w-4xl mx-auto py-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <h2 className="text-3xl font-bold text-slate-800">My Order History</h2>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => navigate('/products')} 
+            className="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl shadow-sm transition-all"
+          >
+            Back to Shop
+          </button>
+          <button 
+            onClick={handleLogout} 
+            className="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 hover:border-red-200 font-bold rounded-xl shadow-sm transition-all"
+          >
+            Logout
+          </button>
         </div>
       </div>
 
       {orders.length === 0 ? (
-        <p>No orders found.</p>
+        <div className="bg-white rounded-3xl p-12 text-center shadow-sm border border-slate-100">
+          <span className="text-6xl mb-4 block">📦</span>
+          <p className="text-xl text-slate-600 font-semibold mb-6">No orders found yet.</p>
+          <button 
+            onClick={() => navigate('/products')} 
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all"
+          >
+            Start Shopping
+          </button>
+        </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div className="space-y-4">
           {orders.map((order) => (
-            <div key={order.OrderID} style={{ 
-              border: '1px solid #ddd', 
-              borderRadius: '8px', 
-              padding: '15px',
-              backgroundColor: '#fff',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <span style={{ fontWeight: 'bold' }}>Order #{order.OrderID}</span>
-                <span style={{ 
-                  padding: '4px 8px', 
-                  borderRadius: '12px', 
-                  fontSize: '12px',
-                  backgroundColor: order.Status === 'completed' ? '#e8f5e9' : '#fff3e0',
-                  color: order.Status === 'completed' ? '#2e7d32' : '#e65100'
-                }}>
-                  {order.Status.toUpperCase()}
+            <div key={order.OrderID} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                <span className="font-bold text-slate-800 text-lg">Order #{order.OrderID}</span>
+                <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                  order.Status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {order.Status}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '14px' }}>
-                <span>Date: {new Date(order.CreatedAt).toLocaleString()}</span>
-                <span>Items: {order.ItemCount}</span>
-              </div>
-              <div style={{ marginTop: '10px', textAlign: 'right', fontSize: '18px', fontWeight: 'bold', color: '#155ecb' }}>
-                Total: ₹{order.TotalAmount}
+              <div className="flex flex-wrap justify-between items-center bg-slate-50 p-4 rounded-xl mb-4 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Date & Time</p>
+                  <p className="text-sm font-semibold text-slate-700">{new Date(order.CreatedAt).toLocaleDateString()} at {new Date(order.CreatedAt).toLocaleTimeString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Items</p>
+                  <p className="text-sm font-semibold text-slate-700">{order.ItemCount}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Total</p>
+                  <p className="text-xl font-black text-blue-600">₹{order.TotalAmount}</p>
+                </div>
               </div>
             </div>
           ))}

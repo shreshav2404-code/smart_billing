@@ -89,209 +89,134 @@ const CheckoutSuggestions = ({ cart, onAddToCart }) => {
     setAddedItems(prev => new Set([...prev, suggestion.productId]));
   };
 
-  const getConfidenceColor = (confidence) => {
-    if (confidence >= 0.7) return '#059669';
-    if (confidence >= 0.4) return '#d97706';
-    return '#6b7280';
-  };
-
-  const getConfidenceLabel = (confidence) => {
-    if (confidence >= 0.7) return 'High';
-    if (confidence >= 0.4) return 'Medium';
-    return 'Low';
-  };
-
   if (!cart || cart.length === 0) return null;
 
   return (
-    <div className="checkout-suggestions">
-      {/* Header */}
-      <div className="suggestions-header">
-        <div className="suggestions-title-row">
-          <div className="suggestions-icon">🧠</div>
+    <div className="bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 p-6 sm:p-8 rounded-3xl border border-indigo-100/50 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/30">
+            🧠
+          </div>
           <div>
-            <h3 className="suggestions-title">Frequently Bought Together</h3>
-            <p className="suggestions-subtitle">
-              AI-powered suggestions using <strong>Apriori Algorithm</strong> &amp; Association Rule Mining
-            </p>
+            <h3 className="text-xl font-bold text-indigo-900 mb-1">Frequently Bought Together</h3>
+            <p className="text-sm text-indigo-600 font-medium">AI-powered suggestions using Apriori Algorithm</p>
           </div>
         </div>
 
-        {/* Algorithm Controls — Owner Only */}
         {isOwner && (
-          <div className="algo-controls">
-            <button
-              className={`algo-toggle ${showDetails ? 'active' : ''}`}
-              onClick={() => setShowDetails(!showDetails)}
-            >
-              ⚙️ {showDetails ? 'Hide' : 'Show'} Algorithm Settings
-            </button>
-          </div>
-        )}
-
-        {showDetails && (
-          <div className="algo-settings">
-            <div className="algo-setting-group">
-              <div className="algo-setting">
-                <label>
-                  Min Support
-                  <span className="algo-hint">
-                    (How frequently items appear together)
-                  </span>
-                </label>
-                <div className="slider-container">
-                  <input
-                    type="range"
-                    min="0.01"
-                    max="0.5"
-                    step="0.01"
-                    value={minSupport}
-                    onChange={(e) => handleSupportChange(e.target.value)}
-                    className="algo-slider"
-                  />
-                  <span className="slider-value">{(minSupport * 100).toFixed(0)}%</span>
-                </div>
-              </div>
-
-              <div className="algo-setting">
-                <label>
-                  Min Confidence
-                  <span className="algo-hint">
-                    (Probability of buying B given A is bought)
-                  </span>
-                </label>
-                <div className="slider-container">
-                  <input
-                    type="range"
-                    min="0.01"
-                    max="1.0"
-                    step="0.01"
-                    value={minConfidence}
-                    onChange={(e) => handleConfidenceChange(e.target.value)}
-                    className="algo-slider"
-                  />
-                  <span className="slider-value">{(minConfidence * 100).toFixed(0)}%</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Algorithm Metadata */}
-            {metadata && (
-              <div className="algo-metadata">
-                <div className="metadata-chip">
-                  <span className="chip-label">Algorithm</span>
-                  <span className="chip-value">{metadata.algorithm}</span>
-                </div>
-                <div className="metadata-chip">
-                  <span className="chip-label">Transactions</span>
-                  <span className="chip-value">{metadata.totalTransactions}</span>
-                </div>
-                <div className="metadata-chip">
-                  <span className="chip-label">Rules Found</span>
-                  <span className="chip-value">{metadata.totalRules}</span>
-                </div>
-                <div className="metadata-chip">
-                  <span className="chip-label">Frequent Itemsets</span>
-                  <span className="chip-value">{metadata.totalFrequentItemsets}</span>
-                </div>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              showDetails ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200'
+            }`}
+          >
+            ⚙️ {showDetails ? 'Hide Settings' : 'Algo Settings'}
+          </button>
         )}
       </div>
 
-      {/* Suggestions Grid */}
+      {showDetails && isOwner && (
+        <div className="bg-white/60 backdrop-blur-md border border-white/50 rounded-2xl p-6 mb-8 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Min Support</label>
+              <p className="text-xs text-slate-500 mb-2">(How frequently items appear together)</p>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range" min="0.01" max="0.5" step="0.01" value={minSupport} onChange={(e) => handleSupportChange(e.target.value)}
+                  className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <span className="font-bold text-indigo-700 min-w-[3rem]">{(minSupport * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Min Confidence</label>
+              <p className="text-xs text-slate-500 mb-2">(Probability of buying B given A is bought)</p>
+              <div className="flex items-center gap-4">
+                <input
+                  type="range" min="0.01" max="1.0" step="0.01" value={minConfidence} onChange={(e) => handleConfidenceChange(e.target.value)}
+                  className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <span className="font-bold text-indigo-700 min-w-[3rem]">{(minConfidence * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+          </div>
+
+          {metadata && (
+            <div className="flex flex-wrap gap-2 pt-4 border-t border-indigo-100">
+              <span className="px-3 py-1 bg-white rounded-full text-xs font-semibold text-slate-600 border border-slate-200">Algorithm: {metadata.algorithm}</span>
+              <span className="px-3 py-1 bg-white rounded-full text-xs font-semibold text-slate-600 border border-slate-200">Transactions: {metadata.totalTransactions}</span>
+              <span className="px-3 py-1 bg-white rounded-full text-xs font-semibold text-slate-600 border border-slate-200">Rules: {metadata.totalRules}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {loading ? (
-        <div className="suggestions-loading">
-          <div className="loading-spinner"></div>
-          <p>Running Apriori algorithm...</p>
+        <div className="flex flex-col items-center justify-center py-12 text-indigo-600">
+          <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+          <p className="font-medium animate-pulse">Running Apriori Algorithm...</p>
         </div>
       ) : suggestions.length > 0 ? (
-        <div className="suggestions-grid">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {suggestions.map((suggestion, index) => {
             const isAdded = addedItems.has(suggestion.productId);
+            const confPercent = suggestion.confidence * 100;
+            const confColor = confPercent >= 70 ? 'emerald' : confPercent >= 40 ? 'amber' : 'slate';
+            
             return (
-              <div
-                key={suggestion.productId}
-                className={`suggestion-card ${isAdded ? 'added' : ''}`}
-                style={{ animationDelay: `${index * 0.08}s` }}
-              >
-                {/* Confidence Badge */}
-                <div
-                  className="confidence-badge"
-                  style={{ backgroundColor: getConfidenceColor(suggestion.confidence) }}
-                >
-                  {getConfidenceLabel(suggestion.confidence)} Match
-                </div>
+              <div key={suggestion.productId} className={`bg-white rounded-2xl p-5 border shadow-sm transition-all relative overflow-hidden ${isAdded ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100 hover:border-indigo-300 hover:shadow-md hover:-translate-y-1'}`}>
+                
+                <span className={`absolute top-4 right-4 text-[10px] uppercase font-bold px-2 py-1 rounded-full text-white ${confPercent >= 70 ? 'bg-emerald-500' : confPercent >= 40 ? 'bg-amber-500' : 'bg-slate-400'}`}>
+                  {confPercent >= 70 ? 'High' : confPercent >= 40 ? 'Medium' : 'Low'} Match
+                </span>
 
-                {/* Product Info */}
-                <div className="suggestion-product-info">
-                  <span className="suggestion-category">{suggestion.category}</span>
-                  <h4 className="suggestion-name">{suggestion.name}</h4>
-                  <p className="suggestion-price">₹{suggestion.price}</p>
-                </div>
+                <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold uppercase rounded mb-2">{suggestion.category}</span>
+                <h4 className="font-bold text-slate-800 text-lg mb-1 pr-16 leading-tight">{suggestion.name}</h4>
+                <p className="text-xl font-black text-blue-600 mb-4">₹{suggestion.price}</p>
 
-                {/* Association Rule Info */}
-                <div className="suggestion-rule-info">
-                  <div className="rule-stat">
-                    <div className="rule-stat-bar">
-                      <div
-                        className="rule-stat-fill confidence-fill"
-                        style={{ width: `${suggestion.confidence * 100}%` }}
-                      ></div>
+                <div className="space-y-2 mb-4">
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-500">Confidence</span>
+                      <span className="font-bold text-slate-700">{confPercent.toFixed(1)}%</span>
                     </div>
-                    <div className="rule-stat-text">
-                      <span>Confidence</span>
-                      <strong>{(suggestion.confidence * 100).toFixed(1)}%</strong>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-full bg-${confColor}-500`} style={{ width: `${confPercent}%` }}></div>
                     </div>
                   </div>
-                  <div className="rule-stat">
-                    <div className="rule-stat-bar">
-                      <div
-                        className="rule-stat-fill support-fill"
-                        style={{ width: `${Math.min(suggestion.support * 100 * 5, 100)}%` }}
-                      ></div>
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-500">Support</span>
+                      <span className="font-bold text-slate-700">{(suggestion.support * 100).toFixed(1)}%</span>
                     </div>
-                    <div className="rule-stat-text">
-                      <span>Support</span>
-                      <strong>{(suggestion.support * 100).toFixed(1)}%</strong>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500" style={{ width: `${Math.min(suggestion.support * 100 * 5, 100)}%` }}></div>
                     </div>
                   </div>
-                  {suggestion.lift && (
-                    <div className="rule-stat-lift">
-                      <span>Lift: </span>
-                      <strong>{suggestion.lift.toFixed(2)}x</strong>
-                    </div>
-                  )}
                 </div>
 
-                {/* Association Rule explanation */}
                 {suggestion.antecedentNames && (
-                  <div className="rule-explanation">
-                    <span className="rule-arrow-label">
-                      People who bought <strong>{suggestion.antecedentNames.join(' + ')}</strong> also bought this
-                    </span>
+                  <div className="bg-indigo-50/50 p-2 rounded-lg text-[10px] text-slate-600 mb-4 border border-indigo-100/50">
+                    Bought with <strong className="text-indigo-700">{suggestion.antecedentNames.join(' + ')}</strong>
                   </div>
                 )}
 
-                {/* Add to Cart Button */}
                 <button
-                  className={`suggestion-add-btn ${isAdded ? 'added' : ''}`}
                   onClick={() => !isAdded && handleAddItem(suggestion)}
                   disabled={isAdded}
+                  className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all ${isAdded ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md'}`}
                 >
-                  {isAdded ? '✓ Added to Cart' : '+ Add to Cart'}
+                  {isAdded ? '✓ Added' : '+ Add to Cart'}
                 </button>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="no-suggestions">
-          <p>No suggestions available for the current cart items and algorithm parameters.</p>
-          <p style={{ fontSize: '13px', opacity: 0.7 }}>
-            Try lowering the minimum support or confidence thresholds.
-          </p>
+        <div className="text-center py-8">
+          <p className="text-slate-500 font-medium">No suggestions right now for these items.</p>
         </div>
       )}
     </div>

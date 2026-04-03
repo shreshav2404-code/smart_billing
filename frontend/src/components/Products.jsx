@@ -61,7 +61,6 @@ const Products = () => {
       try {
         const res = await axios.get('/api/products');
         setProducts(res.data);
-        // Extract unique categories
         const uniqueCategories = ['All', ...new Set(res.data.map(p => p.Category))];
         setCategories(uniqueCategories);
         const initialQuantities = {};
@@ -76,7 +75,6 @@ const Products = () => {
     fetchProducts();
   }, []);
 
-  // Fetch Personalized Recommendations (Collaborative Filtering)
   useEffect(() => {
     const fetchUserRecommendations = async () => {
       const token = localStorage.getItem('token');
@@ -95,34 +93,29 @@ const Products = () => {
       }
     };
     fetchUserRecommendations();
-  }, []); // Run once on mount
+  }, []);
 
-  // Fetch recommendations on mount if cart has items
   useEffect(() => {
     if (cart.length > 0) {
       const itemIds = cart.map(p => p.ProductID);
       axios.post('/api/recommendations', { items: itemIds })
         .then(res => {
-          console.log('Initial Recommendations:', res.data);
           setRecommendations(res.data);
         })
         .catch(err => console.log('ML error', err));
     }
-  }, []); // Run once on mount
+  }, []);
 
   const addToCart = (product) => {
     const quantity = quantities[product.ProductID] || 1;
     
-    // Check if item already exists in cart
     const existingItemIndex = cart.findIndex(item => item.ProductID === product.ProductID);
     let newCart;
     
     if (existingItemIndex > -1) {
-      // Update quantity if already in cart
       newCart = [...cart];
       newCart[existingItemIndex].quantity += quantity;
     } else {
-      // Add new item
       const cartItem = { ...product, quantity };
       newCart = [...cart, cartItem];
     }
@@ -130,11 +123,9 @@ const Products = () => {
     setCart(newCart);
     localStorage.setItem('cart', JSON.stringify(newCart));
     
-    // Get recommendations
     const itemIds = newCart.map(p => p.ProductID);
     axios.post('/api/recommendations', { items: itemIds })
       .then(res => {
-        console.log('Recommendations:', res.data);
         setRecommendations(res.data);
       })
       .catch(err => console.log('ML error', err));
@@ -153,108 +144,63 @@ const Products = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    localStorage.removeItem('cart'); // Optional: clear cart on logout
+    localStorage.removeItem('cart');
     localStorage.removeItem('userId');
     localStorage.removeItem('userRole');
     navigate('/');
   };
 
   return (
-    <div>
-      {/* Toast Notification */}
+    <div className="w-full relative">
       {toast && (
-        <div style={{
-          position: 'fixed', top: '20px', right: '20px', zIndex: 9999,
-          background: 'linear-gradient(90deg, #059669, #10b981)', color: 'white',
-          padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: 600,
-          boxShadow: '0 6px 20px rgba(5,150,105,0.35)', animation: 'fadeInUp 0.3s ease'
-        }}>
+        <div className="fixed top-5 right-5 z-50 bg-gradient-to-r from-emerald-500 to-emerald-400 text-white px-6 py-3 rounded-xl font-semibold shadow-lg shadow-emerald-500/30 animate-fade-in-up">
           ✓ {toast}
         </div>
       )}
-      <h2>Browse Products</h2>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
-        <button onClick={() => navigate('/cart')} style={{ width: 'auto', padding: '10px 18px' }}>🛒 View Cart ({cart.length} items)</button>
-        <button onClick={() => navigate('/orders')} style={{ width: 'auto', padding: '10px 18px' }}>My Orders</button>
-        <button onClick={handleLogout} style={{ width: 'auto', padding: '10px 18px', backgroundColor: '#eb4d4b', color: 'white' }}>Logout</button>
-        <button onClick={handleProfileClick} style={{ width: 'auto', padding: '10px 18px', backgroundColor: '#6c5ce7', color: 'white', marginLeft: 'auto' }}>👤 Account Details</button>
+
+      {/* Header Actions */}
+      <div className="flex flex-col sm:flex-row justify-between items-center sm:items-start gap-4 mb-8">
+        <h2 className="text-3xl font-bold text-slate-800">Discover Products</h2>
+        <div className="flex flex-wrap gap-2 justify-center">
+          <button 
+            onClick={() => navigate('/cart')} 
+            className="flex items-center gap-2 px-4 py-2 bg-white text-blue-600 border border-blue-200 hover:border-blue-300 hover:bg-blue-50 rounded-xl font-semibold transition-all shadow-sm"
+          >
+            🛒 View Cart <span className="bg-blue-100 text-blue-800 py-0.5 px-2 rounded-full text-xs">{cart.length}</span>
+          </button>
+          <button 
+            onClick={() => navigate('/orders')} 
+            className="px-4 py-2 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-xl font-semibold transition-all shadow-sm"
+          >
+            My Orders
+          </button>
+          <button 
+            onClick={handleProfileClick} 
+            className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 hover:border-indigo-300 rounded-xl font-semibold transition-all shadow-sm"
+          >
+            👤 Account
+          </button>
+          <button 
+            onClick={handleLogout} 
+            className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 hover:border-red-300 rounded-xl font-semibold transition-all shadow-sm"
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
-      {/* Profile Modal Overlay */}
-      {showProfile && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000,
-          display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
-          <div style={{
-            backgroundColor: '#fff', borderRadius: '12px', padding: '25px',
-            width: '90%', maxWidth: '600px', maxHeight: '85vh', overflowY: 'auto',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '15px', marginBottom: '15px' }}>
-              <h2 style={{ margin: 0 }}>Customer Account Details</h2>
-              <button onClick={() => setShowProfile(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#888' }}>&times;</button>
-            </div>
-            
-            <div style={{ marginBottom: '25px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-              <p style={{ margin: '5px 0' }}><strong>Email:</strong> {userDetails?.email || 'N/A'}</p>
-              <p style={{ margin: '5px 0' }}><strong>Customer ID:</strong> #{userDetails?.id || localStorage.getItem('userId')}</p>
-              <p style={{ margin: '5px 0' }}><strong>Role:</strong> {localStorage.getItem('userRole') || 'customer'}</p>
-            </div>
-
-            <h3 style={{ borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Order History</h3>
-            {loadingOrders ? (
-              <p>Loading orders...</p>
-            ) : orders.length === 0 ? (
-              <p>No orders found.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {orders.map((order) => (
-                  <div key={order.OrderID} style={{ 
-                    border: '1px solid #ddd', borderRadius: '8px', padding: '15px', backgroundColor: '#fff'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                      <span style={{ fontWeight: 'bold' }}>Order #{order.OrderID}</span>
-                      <span style={{ 
-                        padding: '4px 8px', borderRadius: '12px', fontSize: '12px',
-                        backgroundColor: order.Status === 'completed' ? '#e8f5e9' : '#fff3e0',
-                        color: order.Status === 'completed' ? '#2e7d32' : '#e65100'
-                      }}>
-                        {order.Status.toUpperCase()}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '14px' }}>
-                      <span>Date: {new Date(order.CreatedAt).toLocaleString()}</span>
-                      <span>Items: {order.ItemCount}</span>
-                    </div>
-                    <div style={{ marginTop: '10px', textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: '#155ecb' }}>
-                      Total: ₹{order.TotalAmount}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Category Filter */}
-      <div style={{ marginBottom: '20px', padding: '12px', background: 'linear-gradient(90deg,#eef6ff,#f8fbff)', borderRadius: '8px' }}>
-        <p><strong>Categories:</strong></p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+      {/* Categories */}
+      <div className="mb-8 overflow-x-auto pb-2">
+        <div className="flex gap-2 min-w-max">
           {categories.map(cat => (
             <button 
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              style={{
-                padding: '8px 15px',
-                backgroundColor: selectedCategory === cat ? '#155ecb' : '#e6eefc',
-                color: selectedCategory === cat ? 'white' : '#08305a',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                selectedCategory === cat 
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' 
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
             >
               {cat}
             </button>
@@ -262,37 +208,37 @@ const Products = () => {
         </div>
       </div>
 
-      {/* User Personalized Recommendations */}
+      {/* User Recs */}
       {userDetails && userDetails.role !== 'owner' && (userRecommendations.length > 0 || loadingUserRecs) && (
-        <div style={{ marginBottom: '40px', padding: '20px', background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)', borderRadius: '12px', border: '1px solid #dee2e6' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
-            <span style={{ fontSize: '24px' }}>🌟</span>
-            <h3 style={{ margin: 0, color: '#2b7be9' }}>Recommended For You</h3>
+        <div className="mb-10 bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-2xl">✨</span>
+            <div>
+              <h3 className="text-lg font-bold text-indigo-900">Recommended For You</h3>
+              <p className="text-sm text-indigo-600">Based on your preferences and similar users</p>
+            </div>
           </div>
-          <p style={{ margin: '0 0 15px 0', color: '#6c757d', fontSize: '14px' }}>Inspired by your trends and users like you.</p>
           
           {loadingUserRecs ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>Loading personalized insights...</div>
+            <div className="text-center py-8 text-indigo-400 font-medium">Analyzing preferences...</div>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', justifyContent: 'flex-start' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {userRecommendations.map((prod, idx) => (
-                <div key={prod.ProductID} style={{ 
-                  flex: '0 1 calc(20% - 12px)', minWidth: '160px', 
-                  background: 'white', padding: '15px', borderRadius: '10px', 
-                  boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0',
-                  position: 'relative', overflow: 'hidden'
-                }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, background: '#ffc107', color: '#000', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderBottomRightRadius: '8px' }}>
+                <div key={prod.ProductID} className="bg-white rounded-xl shadow-sm border border-indigo-50 p-4 relative overflow-hidden group hover:shadow-md transition-all">
+                  <div className="absolute top-0 right-0 bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-1 rounded-bl-lg z-10 shadow-sm">
                     Top Pick #{idx + 1}
                   </div>
-                  <div style={{ marginTop: '15px' }}>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>{prod.Category}</span>
-                    <h4 style={{ margin: '4px 0', fontSize: '15px', color: '#1e293b' }}>{prod.Name}</h4>
-                    <p style={{ margin: '0 0 10px 0', color: '#2b7be9', fontWeight: 'bold', fontSize: '16px' }}>₹{prod.Price}</p>
-                    <button onClick={() => addToCart(prod)} style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'linear-gradient(90deg, #4f46e5, #3b82f6)', border: 'none', color: 'white', borderRadius: '6px', cursor: 'pointer' }}>
-                      Add to Cart
-                    </button>
-                  </div>
+                  <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full mb-3">
+                    {prod.Category}
+                  </span>
+                  <h4 className="font-bold text-slate-800 mb-1 truncate" title={prod.Name}>{prod.Name}</h4>
+                  <p className="text-blue-600 font-black text-lg mb-4">₹{prod.Price}</p>
+                  <button 
+                    onClick={() => addToCart(prod)}
+                    className="w-full py-2 bg-gradient-to-r from-indigo-500 to-blue-500 hover:from-indigo-600 hover:to-blue-600 text-white rounded-lg font-semibold text-sm shadow-md shadow-indigo-500/20 transform hover:-translate-y-0.5 transition-all focus:outline-none"
+                  >
+                    Add to Cart
+                  </button>
                 </div>
               ))}
             </div>
@@ -300,64 +246,145 @@ const Products = () => {
         </div>
       )}
 
-      {/* Products */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '30px', justifyContent: 'center' }}>
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-12">
         {filteredProducts.map(product => (
-          <div key={product.ProductID} className="product" style={{ flex: '1 1 calc(25% - 15px)', minWidth: '200px', maxWidth: '320px' }}>
-            <span style={{ fontSize: '12px', color: '#08305a', backgroundColor: '#e9f1ff', padding: '4px 10px', borderRadius: '12px', alignSelf: 'flex-start' }}>
+          <div key={product.ProductID} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex flex-col hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+            <span className="self-start inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full mb-4">
               {product.Category}
             </span>
-            <h3>{product.Name}</h3>
-            <p>Price: <strong>₹{product.Price}</strong></p>
-            <p>Stock: {product.Stock}</p>
-            <div style={{ marginBottom: '10px' }}>
-              <label style={{ marginRight: '10px' }}>Qty:</label>
-              <input
-                type="number"
-                min="1"
-                max={product.Stock}
-                value={quantities[product.ProductID] || 1}
-                onChange={(e) => updateQuantity(product.ProductID, e.target.value)}
-                style={{ width: '60px', padding: '5px' }}
-              />
+            <h3 className="font-bold text-lg text-slate-800 mb-1 leading-tight">{product.Name}</h3>
+            <p className="text-2xl font-black text-blue-600 mb-2">₹{product.Price}</p>
+            <p className="text-sm text-slate-500 mb-4 flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${product.Stock > 10 ? 'bg-emerald-400' : product.Stock > 0 ? 'bg-amber-400' : 'bg-red-400'}`}></span>
+              {product.Stock} in stock
+            </p>
+            
+            <div className="mt-auto">
+              <div className="flex items-center justify-between bg-slate-50 rounded-xl p-2 mb-4 border border-slate-100">
+                <span className="text-sm font-semibold text-slate-600 pl-2">Qty</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={product.Stock}
+                  value={quantities[product.ProductID] || 1}
+                  onChange={(e) => updateQuantity(product.ProductID, e.target.value)}
+                  className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1 text-center font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <button 
+                onClick={() => addToCart(product)}
+                disabled={product.Stock === 0}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-semibold shadow-md transform hover:-translate-y-0.5 transition-all focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add to Cart
+              </button>
             </div>
-            <button onClick={() => addToCart(product)} style={{ width: '100%', borderRadius: '8px' }}>Add to Cart</button>
           </div>
         ))}
       </div>
 
-      {/* Recommendations */}
+      {/* Cart based Recs */}
       {recommendations.length > 0 && (
-        <div className="recommendations" style={{ marginTop: '30px' }}>
-          <h3>🎯 Recommended For You</h3>
-          <p style={{ color: '#666' }}>Based on your cart, you might also like:</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
+        <div className="bg-white border text-center sm:text-left border-blue-100 rounded-2xl p-6 shadow-sm mb-12">
+          <div className="mb-6">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 justify-center sm:justify-start">
+              <span>🎯</span> Frequently Bought Together
+            </h3>
+            <p className="text-slate-500 text-sm mt-1">Customers who bought your items also liked these</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {recommendations.map(id => {
               const prod = products.find(p => p.ProductID === id);
               return prod ? (
                 <div 
                   key={id} 
-                  style={{
-                    padding: '12px',
-                    background: 'linear-gradient(180deg,#ffffff,#eef6ff)',
-                    border: '1px solid rgba(30,111,224,0.12)',
-                    borderRadius: '8px',
-                    minWidth: '150px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
                   onClick={() => addToCart(prod)}
+                  className="bg-slate-50 border border-slate-100 hover:border-blue-300 rounded-xl p-4 cursor-pointer hover:bg-blue-50 hover:-translate-y-1 transition-all group flex flex-col text-center"
                 >
-                  <p style={{ margin: '0 0 5px 0', fontWeight: 'bold' }}>{prod.Name}</p>
-                  <p style={{ margin: '0 0 8px 0', color: '#155ecb', fontSize: '16px', fontWeight: 'bold' }}>₹{prod.Price}</p>
-                  <small style={{ color: '#999' }}>{prod.Category}</small>
-                  <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '12px' }}>Click to add</p>
+                  <span className="text-[10px] uppercase font-bold text-blue-500 tracking-wider mb-2">{prod.Category}</span>
+                  <p className="font-semibold text-slate-700 mb-1 text-sm group-hover:text-blue-700">{prod.Name}</p>
+                  <p className="font-black text-blue-600 mt-auto">₹{prod.Price}</p>
                 </div>
               ) : null;
             })}
           </div>
         </div>
       )}
+
+      {/* Profile Modal */}
+      {showProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fade-in-up">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Account Details</h2>
+              <button 
+                onClick={() => setShowProfile(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="bg-slate-50 rounded-2xl p-5 mb-8 border border-slate-100 flex flex-col sm:flex-row gap-6 items-center sm:items-start text-center sm:text-left">
+                <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-2xl font-bold">
+                  {userDetails?.email?.charAt(0).toUpperCase() || 'U'}
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-slate-800">{userDetails?.email || 'N/A'}</p>
+                  <p className="text-sm text-slate-500">Customer ID: <span className="font-semibold text-slate-700">#{userDetails?.id || localStorage.getItem('userId')}</span></p>
+                  <p className="text-sm text-slate-500">Role: <span className="uppercase text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">{localStorage.getItem('userRole') || 'customer'}</span></p>
+                </div>
+              </div>
+
+              <h3 className="font-bold text-slate-800 mb-4 text-lg">Recent Orders</h3>
+              {loadingOrders ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                </div>
+              ) : orders.length === 0 ? (
+                <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <span className="text-3xl mb-2 block">📦</span>
+                  <p className="text-slate-500 font-medium">No orders found yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {orders.map((order) => (
+                    <div key={order.OrderID} className="border border-slate-100 rounded-2xl p-5 bg-white shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+                        <span className="font-bold text-slate-800">Order #{order.OrderID}</span>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                          order.Status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {order.Status}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap justify-between text-sm text-slate-500 mb-4 border-b border-slate-50 pb-4">
+                        <span>{new Date(order.CreatedAt).toLocaleDateString()} at {new Date(order.CreatedAt).toLocaleTimeString()}</span>
+                        <span>{order.ItemCount} items</span>
+                      </div>
+                      <div className="text-right font-black text-lg text-blue-600">
+                        ₹{order.TotalAmount}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+          animation: fade-in-up 0.3s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 };

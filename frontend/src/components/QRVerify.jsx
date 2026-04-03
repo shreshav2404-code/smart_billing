@@ -90,36 +90,37 @@ const QRVerify = () => {
   };
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-      <h2>Gate Verification System</h2>
+    <div className="max-w-xl mx-auto py-10 px-4">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-black text-slate-800">Gate Verification</h2>
+        <p className="text-slate-500 mt-2">Verify checkout status using QR or OTP</p>
+      </div>
+
+      {result && (
+        <div className={`mb-8 p-4 rounded-xl border font-bold text-center flex items-center justify-center gap-2 shadow-sm ${
+          result.includes('Granted') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 
+          result.includes('Denied') ? 'bg-red-50 border-red-200 text-red-700' : 
+          'bg-amber-50 border-amber-200 text-amber-700'
+        }`}>
+          {result}
+        </div>
+      )}
 
       {/* Mode Selection */}
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-8">
         <button
           onClick={() => setVerifyMode('qr')}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: verifyMode === 'qr' ? '#4CAF50' : '#ddd',
-            color: verifyMode === 'qr' ? 'white' : '#333',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
+          className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${
+            verifyMode === 'qr' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+          }`}
         >
           📱 Scan QR Code
         </button>
         <button
           onClick={() => setVerifyMode('otp')}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: verifyMode === 'otp' ? '#4CAF50' : '#ddd',
-            color: verifyMode === 'otp' ? 'white' : '#333',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
+          className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${
+            verifyMode === 'otp' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+          }`}
         >
           🔐 Enter OTP
         </button>
@@ -127,22 +128,30 @@ const QRVerify = () => {
 
       {/* QR Code Mode */}
       {verifyMode === 'qr' && (
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
-          <p style={{ color: '#666', textAlign: 'center', marginBottom: '15px' }}>Point your camera at the entry QR Code</p>
-          <div id="qr-reader" style={{ width: '100%', maxWidth: '500px', margin: '0 auto', overflow: 'hidden', borderRadius: '8px' }}></div>
+        <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100">
+          <p className="text-slate-500 text-center font-medium mb-6">Point your camera at the entry QR Code</p>
           
-          <div style={{ marginTop: '30px', borderTop: '1px dashed #ccc', paddingTop: '20px' }}>
-            <p style={{ color: '#999', fontSize: '12px', textAlign: 'center' }}>Or verify manually by pasting data below:</p>
-            <form onSubmit={(e) => { e.preventDefault(); handleVerifyQRManually(); }} style={{ display: 'flex', gap: '10px' }}>
+          <div className="bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 mb-6">
+            <div id="qr-reader" className="w-full mx-auto border-none"></div>
+          </div>
+          
+          <div className="border-t border-slate-100 pt-6">
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider text-center mb-4">Or verify manually</p>
+            <form onSubmit={(e) => { e.preventDefault(); handleVerifyQRManually(); }} className="flex gap-2">
               <input
                 type="text"
-                placeholder='Paste QR data here'
+                placeholder="Paste QR data here"
                 value={qrData}
                 onChange={(e) => setQrData(e.target.value)}
                 required
-                style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button type="submit" style={{ padding: '10px 20px' }}>Verify</button>
+              <button 
+                type="submit" 
+                className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors"
+              >
+                Verify
+              </button>
             </form>
           </div>
         </div>
@@ -150,35 +159,33 @@ const QRVerify = () => {
 
       {/* OTP Mode */}
       {verifyMode === 'otp' && (
-        <form onSubmit={(e) => { e.preventDefault(); handleVerifyOTP(); }}>
-          <p style={{ color: '#666' }}>Enter the 6-digit OTP from your receipt/order:</p>
-          <div>
-            <label htmlFor="otp">OTP:</label>
-            <input
-              id="otp"
-              type="text"
-              placeholder="Enter 6-digit OTP"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.toUpperCase())}
-              maxLength="6"
-              required
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', fontSize: '18px', letterSpacing: '2px', textAlign: 'center' }}
-            />
-          </div>
-          <button type="submit" style={{ width: '100%' }}>Verify OTP</button>
-        </form>
-      )}
-
-      {/* Result */}
-      {result && (
-        <div style={{
-          marginTop: '20px',
-          padding: '15px',
-          borderRadius: '4px',
-          backgroundColor: result.includes('Granted') ? '#e8f5e9' : result.includes('Denied') ? '#ffebee' : '#fff3e0',
-          color: result.includes('Granted') ? '#1b5e20' : result.includes('Denied') ? '#b71c1c' : '#e65100'
-        }}>
-          <p style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>{result}</p>
+        <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-100">
+          <form onSubmit={(e) => { e.preventDefault(); handleVerifyOTP(); }} className="flex flex-col gap-6">
+            <div className="text-center">
+              <p className="text-slate-500 font-medium">Enter the 6-digit OTP from</p>
+              <p className="text-slate-500 font-medium">the customer's order receipt</p>
+            </div>
+            
+            <div>
+              <input
+                id="otp"
+                type="text"
+                placeholder="000000"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.toUpperCase())}
+                maxLength="6"
+                required
+                className="w-full text-center text-4xl tracking-[0.5em] font-black text-slate-800 bg-slate-50 border-2 border-slate-200 rounded-2xl py-6 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors uppercase placeholder:text-slate-300"
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transform hover:-translate-y-0.5 transition-all text-lg"
+            >
+              Verify OTP
+            </button>
+          </form>
         </div>
       )}
     </div>
