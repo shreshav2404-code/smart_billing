@@ -15,7 +15,7 @@ RUN cd backend && npm ci --omit=dev
 RUN cd frontend && npm ci --omit=dev
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r ml/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r ml/requirements.txt
 
 # Copy application code
 COPY backend ./backend
