@@ -1,7 +1,7 @@
 FROM node:22-alpine
 
 # Install Python and required system dependencies
-RUN apk add --no-cache python3 py3-pip sqlite
+RUN apk add --no-cache python3 py3-pip sqlite g++ gcc musl-dev python3-dev
 
 WORKDIR /app
 
