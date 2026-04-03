@@ -34,4 +34,4 @@ WORKDIR /app/backend
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node init.js && node server.js"]

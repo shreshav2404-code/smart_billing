@@ -3,6 +3,6 @@
     "builder": "dockerfile"
   },
   "deploy": {
-    "startCommand": "node server.js"
+    "startCommand": "node init.js && node server.js"
   }
 }
