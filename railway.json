@@ -3,6 +3,6 @@
     "builder": "dockerfile"
   },
   "deploy": {
-    "startCommand": "cd backend && node server.js"
+    "startCommand": "node server.js"
   }
 }
