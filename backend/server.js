@@ -733,6 +733,10 @@ app.get('/api/user-recommendations', verifyToken, async (req, res) => {
 });
 
 // Catch-all route to serve the React app
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
