@@ -48,7 +48,7 @@ A full-stack mini project demonstrating a retail billing system with ML-based re
 ### Frontend Setup
 1. Navigate to `frontend` folder
 2. Run `npm install`
-3. Run `npm run dev`
+3. Run `npm run dev` (Vite proxies `/api` to the backend on port 5001)
 
 ### ML Setup
 1. Navigate to `ml` folder
@@ -73,6 +73,12 @@ A full-stack mini project demonstrating a retail billing system with ML-based re
 - POST /api/checkout
 - POST /api/verify-qr
 - POST /api/recommendations
+- GET /api/health (status, start time and uptime; polled by the UI's status indicator)
+
+## Deployment
+Pushing to `main` runs `.github/workflows/huggingface.yml`, which force-pushes the repo to the
+Hugging Face Space (`smartbill-keshu/me`). The Space builds the `Dockerfile` and serves the app on port 7860.
+The workflow can also be started manually from the Actions tab ("Run workflow"); it deploys whichever branch you pick.
 
 ## OS Concepts Demonstrated
 - Asynchronous processing

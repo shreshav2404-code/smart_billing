@@ -1,207 +1,176 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Check, Copy, CreditCard, Download, History, ScanLine, ShoppingCart } from 'lucide-react';
+import axios, { apiError } from '../lib/api';
+import { formatDateTime, formatINR } from '../lib/format';
+import { useCart } from '../context/CartContext';
+import { useToast } from '../context/ToastContext';
 import CheckoutSuggestions from './CheckoutSuggestions';
+import { CartLine, OrderSummary } from './Cart';
+import { Button, Card, EmptyState, PageHeader } from './ui';
+
+const Receipt = ({ receipt }) => {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [copied, setCopied] = useState(false);
+
+  const copyOtp = async () => {
+    try {
+      await navigator.clipboard.writeText(receipt.otp);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error('Copy failed', { description: 'Select the code and copy it manually.' });
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl animate-fade-in">
+      <div className="mb-8 text-center">
+        <div className="mx-auto flex size-16 animate-pop items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30">
+          <Check className="size-8" strokeWidth={3} aria-hidden="true" />
+        </div>
+        <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Payment successful</h1>
+        <p className="mt-1.5 text-slate-500">Show the QR code or OTP at the exit gate.</p>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="grid sm:grid-cols-[1fr_auto]">
+          <div className="p-6 sm:p-8">
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <dt className="text-slate-500">Order</dt>
+                <dd className="mt-0.5 font-semibold text-slate-900">#{receipt.orderId}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Paid</dt>
+                <dd className="mt-0.5 font-semibold text-slate-900 tabular-nums">{formatINR(receipt.total)}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-slate-500">Date</dt>
+                <dd className="mt-0.5 font-medium text-slate-900">{formatDateTime(receipt.placedAt)}</dd>
+              </div>
+            </dl>
+
+            <div className="mt-6 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/70 ring-inset">
+              <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Gate OTP</p>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="font-mono text-3xl font-bold tracking-[0.3em] text-indigo-600 sm:text-4xl">{receipt.otp}</span>
+                <Button variant="secondary" size="sm" icon={copied ? Check : Copy} onClick={copyOtp}>
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+
+            <ul className="mt-6 divide-y divide-slate-100 text-sm">
+              {receipt.items.map((item) => (
+                <li key={item.ProductID} className="flex justify-between gap-3 py-2">
+                  <span className="text-slate-600">
+                    {item.Name} <span className="text-slate-400">× {item.quantity}</span>
+                  </span>
+                  <span className="font-medium text-slate-900 tabular-nums">{formatINR(item.Price * item.quantity)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex flex-col items-center justify-center gap-4 border-t border-dashed border-slate-200 bg-slate-50/60 p-6 sm:border-t-0 sm:border-l sm:p-8">
+            <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <img src={receipt.qrCode} alt={`QR code for order ${receipt.orderId}`} className="size-48" />
+            </div>
+            <a
+              href={receipt.qrCode}
+              download={`smartbill-order-${receipt.orderId}.png`}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-500"
+            >
+              <Download className="size-4" aria-hidden="true" /> Download QR
+            </a>
+          </div>
+        </div>
+      </Card>
+
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+        <Button icon={ScanLine} onClick={() => navigate('/verify')}>Verify at gate</Button>
+        <Button variant="secondary" icon={History} onClick={() => navigate('/orders')}>View orders</Button>
+        <Button variant="ghost" iconRight={ArrowRight} onClick={() => navigate('/products')}>Keep shopping</Button>
+      </div>
+    </div>
+  );
+};
 
 const Checkout = () => {
-  const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
-  const [qrCode, setQrCode] = useState('');
-  const [orderId, setOrderId] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [otp, setOtp] = useState('');
+  const { items, count, total, setQuantity, removeItem, addItem, clear } = useCart();
+  const [processing, setProcessing] = useState(false);
+  const [receipt, setReceipt] = useState(null);
+  const toast = useToast();
   const navigate = useNavigate();
 
-  // Sync cart to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('cart', JSON.stringify(cart));
-  }, [cart]);
-
-  const handleAddSuggestion = (product) => {
-    const existingIndex = cart.findIndex(item => item.ProductID === product.ProductID);
-    let newCart;
-    if (existingIndex > -1) {
-      newCart = [...cart];
-      newCart[existingIndex].quantity = (newCart[existingIndex].quantity || 1) + 1;
-    } else {
-      newCart = [...cart, { ...product, quantity: 1 }];
-    }
-    setCart(newCart);
-  };
-
-  const removeFromCart = (index) => {
-    const newCart = cart.filter((_, i) => i !== index);
-    setCart(newCart);
-  };
-
-  const updateQuantity = (index, newQty) => {
-    if (newQty < 1) return;
-    const newCart = [...cart];
-    newCart[index].quantity = newQty;
-    setCart(newCart);
-  };
-
-  const total = cart.reduce((sum, item) => sum + item.Price * (item.quantity || 1), 0);
-
   const handleCheckout = async () => {
-    const token = localStorage.getItem('token');
-    
-    if (!token) {
-      alert('You must be logged in to checkout.');
-      navigate('/');
-      return;
-    }
-
-    setIsProcessing(true);
-    const items = cart.map(item => ({ productId: item.ProductID, quantity: item.quantity || 1 }));
+    setProcessing(true);
+    const snapshot = items.map((item) => ({ ...item, quantity: item.quantity || 1 }));
     try {
-      const res = await axios.post('/api/checkout', { items }, {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await axios.post('/api/checkout', {
+        items: snapshot.map((item) => ({ productId: item.ProductID, quantity: item.quantity })),
       });
-      setQrCode(res.data.qrCodeUrl);
-      setOrderId(res.data.orderId);
-      setOtp(res.data.otp);
-      localStorage.removeItem('cart');
+      setReceipt({
+        orderId: res.data.orderId,
+        total: res.data.total ?? total,
+        otp: res.data.otp,
+        qrCode: res.data.qrCodeUrl,
+        items: snapshot,
+        placedAt: new Date(),
+      });
+      clear();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || 'Checkout failed');
+      toast.error('Checkout failed', { description: apiError(err, 'Please try again in a moment.') });
+    } finally {
+      setProcessing(false);
     }
-    setIsProcessing(false);
   };
 
-  if (qrCode) {
+  if (receipt) return <Receipt receipt={receipt} />;
+
+  if (items.length === 0) {
     return (
-      <div className="max-w-xl mx-auto bg-white p-8 sm:p-12 rounded-3xl shadow-xl text-center transform hover:scale-[1.01] transition-transform">
-        <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/40">
-          <span className="text-4xl text-white">✓</span>
-        </div>
-        <h2 className="text-3xl font-black text-slate-800 mb-2">Order Confirmed!</h2>
-        <p className="text-lg text-slate-500 mb-8">
-          Order ID: <span className="font-bold text-slate-800 tracking-wide">#{orderId}</span>
-        </p>
-
-        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 mb-8">
-          <p className="text-slate-500 font-medium mb-2">Your verification OTP is:</p>
-          <p className="text-5xl font-black text-blue-600 tracking-[0.25em]">{otp}</p>
-        </div>
-
-        <p className="text-slate-500 font-medium mb-6">
-          Scan this QR code or provide the OTP at the gate for verification.
-        </p>
-        
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 inline-block mb-10">
-          <img src={qrCode} alt="QR Code" className="w-56 h-56 object-contain" />
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <button 
-            onClick={() => navigate('/verify')}
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors w-full sm:w-auto"
-          >
-            🔍 Go to Verify
-          </button>
-          <button 
-            onClick={() => navigate('/products')}
-            className="px-6 py-3 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl transition-colors w-full sm:w-auto"
-          >
-            🛍️ Continue Shopping
-          </button>
-        </div>
+      <div className="animate-fade-in">
+        <PageHeader title="Checkout" />
+        <EmptyState
+          icon={ShoppingCart}
+          title="Nothing to check out"
+          description="Your cart is empty. Add products to place an order."
+          action={<Button onClick={() => navigate('/products')} iconRight={ArrowRight}>Browse products</Button>}
+        />
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto py-8">
-      <h2 className="text-3xl font-bold text-slate-800 mb-8">🛒 Checkout</h2>
-
-      {cart.length === 0 ? (
-        <div className="bg-white p-12 rounded-3xl shadow-sm text-center border border-slate-100">
-          <p className="text-xl text-slate-600 mb-6">Your cart is empty.</p>
-          <button 
-            onClick={() => navigate('/products')}
-            className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-colors"
-          >
-            Browse Products
-          </button>
+    <div className="animate-fade-in">
+      <PageHeader
+        eyebrow="Step 2 of 2"
+        title="Review & pay"
+        subtitle="Check your items, then confirm to get your gate pass."
+        actions={<Button variant="ghost" icon={ArrowLeft} onClick={() => navigate('/cart')}>Back to cart</Button>}
+      />
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-6">
+          <Card className="p-4 sm:p-6">
+            <h2 className="mb-4 font-semibold text-slate-900">Items</h2>
+            <ul className="divide-y divide-slate-100">
+              {items.map((item) => (
+                <CartLine key={item.ProductID} item={item} onQuantity={setQuantity} onRemove={(i) => removeItem(i.ProductID)} compact />
+              ))}
+            </ul>
+          </Card>
+          <CheckoutSuggestions cart={items} onAddToCart={(product) => addItem(product, 1)} />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          <div className="lg:col-span-8 flex flex-col gap-6">
-            {/* The ML suggestions component will render naturally, but it might need to be styled inside its own source. Let's wrap it nicely */}
-            <div className="bg-white/50 backdrop-blur rounded-3xl overflow-hidden border border-slate-100">
-               <CheckoutSuggestions cart={cart} onAddToCart={handleAddSuggestion} />
-            </div>
-          </div>
-
-          <div className="lg:col-span-4">
-            <div className="bg-white rounded-3xl shadow-sm p-6 sm:p-8 border border-slate-100 sticky top-6">
-              <h3 className="text-xl font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">📋 Order Summary</h3>
-              
-              <div className="flex flex-col gap-3 mb-6 max-h-[400px] overflow-y-auto pr-2">
-                {cart.map((item, index) => (
-                  <div key={index} className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <div className="flex-1 w-full">
-                      <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full mb-1 inline-block uppercase">
-                        {item.Category}
-                      </span>
-                      <p className="font-semibold text-slate-800 text-sm leading-tight">{item.Name}</p>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between">
-                      <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden">
-                        <button className="w-7 h-7 flex justify-center items-center font-bold text-slate-500 hover:bg-slate-100" onClick={() => updateQuantity(index, (item.quantity || 1) - 1)}>−</button>
-                        <span className="w-6 text-center text-xs font-bold text-slate-800">{item.quantity || 1}</span>
-                        <button className="w-7 h-7 flex justify-center items-center font-bold text-slate-500 hover:bg-slate-100" onClick={() => updateQuantity(index, (item.quantity || 1) + 1)}>+</button>
-                      </div>
-                      
-                      <span className="font-bold text-slate-800 text-sm w-12 text-right">
-                        ₹{(item.Price * (item.quantity || 1)).toFixed(0)}
-                      </span>
-                      
-                      <button 
-                        className="w-7 h-7 flex justify-center items-center bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
-                        onClick={() => removeFromCart(index)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t border-slate-100 pt-6 mb-8 flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Total Amount</span>
-                <span className="text-3xl font-black text-slate-800">₹{total.toFixed(0)}</span>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleCheckout}
-                  disabled={isProcessing}
-                  className="w-full py-4 px-6 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transform hover:-translate-y-0.5 transition-all focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {isProcessing ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    '💳 Confirm & Pay'
-                  )}
-                </button>
-
-                <button
-                  onClick={() => navigate('/products')}
-                  className="w-full py-3 px-6 bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl transition-all"
-                >
-                  ← Continue Shopping
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        <OrderSummary count={count} total={total}>
+          <Button variant="success" size="lg" className="w-full" icon={CreditCard} loading={processing} onClick={handleCheckout}>
+            {processing ? 'Processing…' : `Pay ${formatINR(total)}`}
+          </Button>
+        </OrderSummary>
+      </div>
     </div>
   );
 };

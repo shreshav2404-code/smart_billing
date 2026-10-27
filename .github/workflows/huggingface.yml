@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
 
-  # to run this workflow manually from the Actions tab
+  # to run this workflow manually from the Actions tab (deploys the selected branch)
   workflow_dispatch:
 
 jobs:
@@ -18,4 +18,4 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://casheww:$HF_TOKEN@huggingface.co/spaces/smartbill-keshu/me main --force
+        run: git push https://casheww:$HF_TOKEN@huggingface.co/spaces/smartbill-keshu/me HEAD:main --force

@@ -12,8 +12,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the frontend build directory
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+const STARTED_AT = new Date().toISOString();
+
+// Serve static files from the frontend build directory. Vite fingerprints
+// everything under /assets, so those can be cached forever; index.html must
+// always be revalidated so a redeploy is picked up immediately.
+app.use(express.static(path.join(__dirname, '../frontend/dist'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // Utility function to generate OTP
 const generateOTP = () => {
@@ -66,6 +78,12 @@ const verifyOwner = (req, res, next) => {
 // Auth Routes
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
+  if (!username?.trim() || !email?.trim() || typeof password !== 'string') {
+    return res.status(400).json({ message: 'Username, email and password are required' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  }
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     db.run(
@@ -163,9 +181,11 @@ app.get('/api/settings/ml', (req, res) => {
 
 // PUT Global ML Settings (Owner Only)
 app.put('/api/settings/ml', verifyOwner, (req, res) => {
-  const { minSupport, minConfidence } = req.body;
-  if (minSupport == null || minConfidence == null) {
-    return res.status(400).json({ message: 'minSupport and minConfidence are required' });
+  const minSupport = Number(req.body.minSupport);
+  const minConfidence = Number(req.body.minConfidence);
+  const inRange = (v) => Number.isFinite(v) && v > 0 && v <= 1;
+  if (!inRange(minSupport) || !inRange(minConfidence)) {
+    return res.status(400).json({ message: 'minSupport and minConfidence must be numbers between 0 and 1' });
   }
 
   db.serialize(() => {
@@ -209,6 +229,10 @@ app.post('/api/auth/owner-login', (req, res) => {
   );
 });
 
+// Accept numbers or numeric strings (form values), reject blanks, negatives and NaN.
+const isValidPrice = (v) => v !== '' && v !== null && Number.isFinite(Number(v)) && Number(v) >= 0;
+const isValidStock = (v) => v !== '' && v !== null && Number.isInteger(Number(v)) && Number(v) >= 0;
+
 // Product Routes
 app.get('/api/products', (req, res) => {
   db.all('SELECT * FROM Products', [], (err, rows) => {
@@ -222,13 +246,16 @@ app.get('/api/products', (req, res) => {
 // Add a new product (Owner Only)
 app.post('/api/products', verifyOwner, (req, res) => {
   const { name, price, stock, weight, category } = req.body;
-  if (!name || price == null || stock == null) {
+  if (!name?.trim() || price == null || stock == null) {
     return res.status(400).json({ message: 'Missing required fields' });
+  }
+  if (!isValidPrice(price) || !isValidStock(stock)) {
+    return res.status(400).json({ message: 'Price must be a non-negative number and stock a non-negative whole number' });
   }
 
   db.run(
     'INSERT INTO Products (Name, Price, Stock, Weight, Category) VALUES (?, ?, ?, ?, ?)',
-    [name, price, stock, weight, category || 'Others'],
+    [name.trim(), Number(price), Number(stock), weight === '' || weight == null ? null : Number(weight), category || 'Others'],
     function (err) {
       if (err) {
         return res.status(500).json({ message: err.message });
@@ -246,17 +273,20 @@ app.put('/api/products/:id', verifyOwner, (req, res) => {
   if (price == null && stock == null) {
     return res.status(400).json({ message: 'At least one field (price or stock) is required' });
   }
+  if ((price != null && !isValidPrice(price)) || (stock != null && !isValidStock(stock))) {
+    return res.status(400).json({ message: 'Price must be a non-negative number and stock a non-negative whole number' });
+  }
 
   let updateQuery = 'UPDATE Products SET ';
   const updateValues = [];
 
   if (price != null) {
     updateQuery += 'Price = ?, ';
-    updateValues.push(price);
+    updateValues.push(Number(price));
   }
   if (stock != null) {
     updateQuery += 'Stock = ?, ';
-    updateValues.push(stock);
+    updateValues.push(Number(stock));
   }
 
   // Remove trailing comma and space
@@ -337,7 +367,10 @@ app.get('/api/orders', verifyToken, (req, res) => {
   const userId = req.user.id;
   db.all(
     `SELECT o.OrderID, o.TotalAmount, o.Status, o.CreatedAt,
-            (SELECT COUNT(*) FROM OrderItems WHERE OrderID = o.OrderID) as ItemCount
+            (SELECT COALESCE(SUM(Quantity), 0) FROM OrderItems WHERE OrderID = o.OrderID) as ItemCount,
+            (SELECT GROUP_CONCAT(p.Name || ' × ' || oi.Quantity, ', ')
+               FROM OrderItems oi JOIN Products p ON p.ProductID = oi.ProductID
+              WHERE oi.OrderID = o.OrderID) as ItemSummary
      FROM Orders o 
      WHERE o.UserID = ? 
      ORDER BY o.CreatedAt DESC`,
@@ -357,8 +390,23 @@ const dbRun = (sql, params = []) => new Promise((resolve, reject) => db.run(sql,
 
 // Checkout Route with Transaction
 app.post('/api/checkout', verifyToken, async (req, res) => {
-  const { items } = req.body; // items: [{productId, quantity}]
   const userId = req.user.id;
+
+  // Validate and merge duplicate lines: a negative or fractional quantity
+  // would otherwise lower the total and *increase* stock.
+  if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
+    return res.status(400).json({ message: 'Your cart is empty' });
+  }
+  const merged = new Map();
+  for (const item of req.body.items) {
+    const productId = Number(item?.productId);
+    const quantity = Number(item?.quantity);
+    if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity < 1) {
+      return res.status(400).json({ message: 'Each item needs a valid product and a quantity of at least 1' });
+    }
+    merged.set(productId, (merged.get(productId) || 0) + quantity);
+  }
+  const items = [...merged].map(([productId, quantity]) => ({ productId, quantity }));
 
   try {
     await dbRun('BEGIN TRANSACTION');
@@ -367,10 +415,13 @@ app.post('/api/checkout', verifyToken, async (req, res) => {
 
     // Check all products
     for (const item of items) {
-      const product = await dbGet('SELECT Price, Stock FROM Products WHERE ProductID = ?', [item.productId]);
+      const product = await dbGet('SELECT Name, Price, Stock FROM Products WHERE ProductID = ?', [item.productId]);
       if (!product || product.Stock < item.quantity) {
         await dbRun('ROLLBACK');
-        return res.status(400).json({ message: `Product not found or insufficient stock for product ID ${item.productId}` });
+        const message = product
+          ? `Only ${product.Stock} × ${product.Name} left in stock`
+          : `Product ID ${item.productId} is no longer available`;
+        return res.status(400).json({ message });
       }
       total += product.Price * item.quantity;
     }
@@ -415,6 +466,11 @@ app.post('/api/checkout', verifyToken, async (req, res) => {
   }
 });
 
+// Order facts shown to gate staff after a successful check (never the OTP).
+const ORDER_DETAIL_COLUMNS = `o.TotalAmount as total, o.CreatedAt as createdAt,
+  (SELECT COALESCE(SUM(Quantity), 0) FROM OrderItems WHERE OrderID = o.OrderID) as itemCount`;
+const orderDetails = (row) => ({ orderId: row.orderId, total: row.total, createdAt: row.createdAt, itemCount: row.itemCount });
+
 // QR Verification Route
 app.post('/api/verify-qr', (req, res) => {
   // Support either full QR payload (`qrData`) or OTP-only (`otp`).
@@ -427,7 +483,9 @@ app.post('/api/verify-qr', (req, res) => {
   if (otp) {
     console.log(`[${new Date().toISOString()}] OTP verification attempt: ${mask(otp)}`);
     db.get(
-      'SELECT o.OrderID as orderId, o.Status as orderStatus, p.Status as paymentStatus FROM Payments p JOIN Orders o ON p.OrderID = o.OrderID WHERE p.OTP = ?',
+      `SELECT o.OrderID as orderId, o.Status as orderStatus, p.Status as paymentStatus, ${ORDER_DETAIL_COLUMNS}
+         FROM Payments p JOIN Orders o ON p.OrderID = o.OrderID WHERE p.OTP = ?
+         ORDER BY o.CreatedAt DESC LIMIT 1`,
       [otp],
       (err, row) => {
         if (err) {
@@ -440,7 +498,7 @@ app.post('/api/verify-qr', (req, res) => {
         }
         const access = row.orderStatus === 'completed' && row.paymentStatus === 'completed';
         console.log(`[${new Date().toISOString()}] OTP ${mask(otp)} matched order ${row.orderId} access=${access}`);
-        return res.json({ access, orderId: row.orderId, message: access ? 'Access Granted' : 'Invalid or unpaid' });
+        return res.json({ access, ...orderDetails(row), message: access ? 'Access Granted' : 'Invalid or unpaid' });
       }
     );
     return;
@@ -456,7 +514,8 @@ app.post('/api/verify-qr', (req, res) => {
     const { orderId } = qrInfo;
     console.log(`[${new Date().toISOString()}] QR verification attempt for order ${orderId}`);
     db.get(
-      'SELECT o.Status as orderStatus, p.Status as paymentStatus FROM Orders o JOIN Payments p ON o.OrderID = p.ORDERID WHERE o.OrderID = ?',
+      `SELECT o.OrderID as orderId, o.Status as orderStatus, p.Status as paymentStatus, p.OTP as otp, ${ORDER_DETAIL_COLUMNS}
+         FROM Orders o JOIN Payments p ON o.OrderID = p.OrderID WHERE o.OrderID = ?`,
       [orderId],
       (err, row) => {
         if (err) {
@@ -467,10 +526,16 @@ app.post('/api/verify-qr', (req, res) => {
           console.log(`[${new Date().toISOString()}] Order not found: ${orderId}`);
           return res.status(404).json({ message: 'Order not found' });
         }
+        // The QR embeds the order's OTP; without this check anyone could forge
+        // a pass by writing {"orderId": N} into a QR code.
+        if (String(qrInfo.otp ?? '') !== String(row.otp)) {
+          console.log(`[${new Date().toISOString()}] QR OTP mismatch for order ${orderId}`);
+          return res.json({ access: false, orderId: row.orderId, message: 'This QR code does not match the order on file' });
+        }
         const access = row.orderStatus === 'completed' && row.paymentStatus === 'completed';
         console.log(`[${new Date().toISOString()}] QR check order ${orderId} access=${access}`);
         // Do NOT return the OTP value in responses
-        return res.json({ access, orderId, message: access ? 'Access Granted' : 'Invalid or unpaid' });
+        return res.json({ access, ...orderDetails(row), message: access ? 'Access Granted' : 'Invalid or unpaid' });
       }
     );
   } catch (err) {
@@ -732,11 +797,22 @@ app.get('/api/user-recommendations', verifyToken, async (req, res) => {
   });
 });
 
-// Catch-all route to serve the React app
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    startedAt: STARTED_AT,
+    uptimeSeconds: Math.round(process.uptime()),
+  });
 });
 
+// Unknown API routes get a JSON 404 instead of the React app's HTML.
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ message: `No API route for ${req.method} ${req.path}` });
+});
+
+// Catch-all route to serve the React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
