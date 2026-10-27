@@ -1,119 +1,107 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, ShieldCheck, ShoppingCart, Trash2 } from 'lucide-react';
+import { formatINR } from '../lib/format';
+import { useCart } from '../context/CartContext';
+import { useToast } from '../context/ToastContext';
+import { Button, Card, CategoryTile, EmptyState, PageHeader, QuantityStepper } from './ui';
 
-const Cart = () => {
-  const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart')) || []);
-  const navigate = useNavigate();
+export const OrderSummary = ({ count, total, children }) => (
+  <Card className="p-5 sm:p-6 lg:sticky lg:top-24">
+    <h2 className="font-semibold text-slate-900">Order summary</h2>
+    <dl className="mt-4 space-y-3 text-sm">
+      <div className="flex justify-between text-slate-600">
+        <dt>Items</dt>
+        <dd className="tabular-nums">{count}</dd>
+      </div>
+      <div className="flex justify-between text-slate-600">
+        <dt>Subtotal</dt>
+        <dd className="tabular-nums">{formatINR(total)}</dd>
+      </div>
+      <div className="flex justify-between text-slate-600">
+        <dt>Taxes &amp; fees</dt>
+        <dd className="text-emerald-600">Included</dd>
+      </div>
+      <div className="flex items-baseline justify-between border-t border-slate-100 pt-3">
+        <dt className="font-semibold text-slate-900">Total</dt>
+        <dd className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{formatINR(total)}</dd>
+      </div>
+    </dl>
+    <div className="mt-6 space-y-3">{children}</div>
+    <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-slate-400">
+      <ShieldCheck className="size-3.5" aria-hidden="true" /> Stock is reserved atomically at checkout
+    </p>
+  </Card>
+);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('cart');
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userRole');
-    navigate('/');
-  };
-
-  useEffect(() => {
-    localStorage.setItem('cart', JSON.stringify(cart));
-  }, [cart]);
-
-  const removeFromCart = (index) => {
-    const newCart = cart.filter((_, i) => i !== index);
-    setCart(newCart);
-  };
-
-  const updateQuantity = (index, newQty) => {
-    if (newQty < 1) return;
-    const newCart = [...cart];
-    newCart[index].quantity = newQty;
-    setCart(newCart);
-  };
-
-  const total = cart.reduce((sum, item) => sum + item.Price * (item.quantity || 1), 0);
-
-  return (
-    <div className="max-w-3xl mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h2 className="text-3xl font-bold text-slate-800">Your Shopping Cart</h2>
-        <button onClick={handleLogout} className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-semibold transition-colors">
-          Logout
+export const CartLine = ({ item, onQuantity, onRemove, compact = false }) => (
+  <li className="flex gap-3 py-4 first:pt-0 last:pb-0 sm:gap-4">
+    <CategoryTile category={item.Category} size={compact ? 'sm' : 'md'} />
+    <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium text-slate-900">{item.Name}</p>
+        <p className="text-sm text-slate-500">{formatINR(item.Price)} each</p>
+      </div>
+      <div className="flex items-center justify-between gap-3 sm:justify-end">
+        <QuantityStepper value={item.quantity || 1} onChange={(q) => onQuantity(item.ProductID, q)} max={item.Stock > 0 ? item.Stock : Infinity} size="sm" label={`Quantity of ${item.Name}`} />
+        <span className="w-24 text-right font-semibold text-slate-900 tabular-nums">{formatINR(item.Price * (item.quantity || 1))}</span>
+        <button
+          type="button"
+          onClick={() => onRemove(item)}
+          className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+          aria-label={`Remove ${item.Name}`}
+        >
+          <Trash2 className="size-4" />
         </button>
       </div>
+    </div>
+  </li>
+);
 
-      {cart.length === 0 ? (
-        <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-100 text-center">
-          <div className="text-6xl mb-4">🛒</div>
-          <p className="text-xl text-slate-600 font-medium mb-6">Your cart is empty.</p>
-          <button 
-            onClick={() => navigate('/products')}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all"
-          >
-            Start Shopping
-          </button>
-        </div>
-      ) : (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-6">
-            <div className="flex flex-col gap-4 mb-6">
-              {cart.map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 gap-4">
-                  <div className="flex-1 w-full flex justify-between sm:justify-start items-center gap-4">
-                    <div>
-                      <h4 className="font-bold text-slate-800 text-lg">{item.Name}</h4>
-                      <p className="text-slate-500 text-sm">{item.Category}</p>
-                    </div>
-                    <div className="font-bold text-blue-600 text-lg sm:ml-auto">
-                      ₹{item.Price}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                    <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden">
-                      <button 
-                        onClick={() => updateQuantity(index, (item.quantity || 1) - 1)}
-                        className="w-10 h-10 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors font-bold"
-                      >−</button>
-                      <span className="w-10 text-center font-bold text-slate-800">{item.quantity || 1}</span>
-                      <button 
-                        onClick={() => updateQuantity(index, (item.quantity || 1) + 1)}
-                        className="w-10 h-10 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors font-bold"
-                      >+</button>
-                    </div>
-                    
-                    <button 
-                      onClick={() => removeFromCart(index)}
-                      className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all"
-                      title="Remove Item"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+const Cart = () => {
+  const { items, count, total, setQuantity, removeItem, addItem } = useCart();
+  const toast = useToast();
+  const navigate = useNavigate();
 
-            <div className="border-t border-slate-100 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <span className="text-lg text-slate-500">Total Amount:</span>
-              <span className="text-3xl font-black text-slate-800">₹{total}</span>
-            </div>
-          </div>
+  const handleRemove = (item) => {
+    removeItem(item.ProductID);
+    toast.info(`Removed ${item.Name}`, { action: { label: 'Undo', onClick: () => addItem(item, item.quantity || 1) } });
+  };
 
-          <div className="bg-slate-50 p-6 flex flex-col sm:flex-row gap-4 border-t border-slate-100">
-            <button 
-              onClick={() => navigate('/products')}
-              className="flex-1 py-3 px-6 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 font-bold rounded-xl shadow-sm transition-all text-center"
-            >
-              ← Continue Shopping
-            </button>
-            <button 
-              onClick={() => navigate('/checkout')}
-              className="flex-1 py-3 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md transform hover:-translate-y-0.5 transition-all text-center"
-            >
-              Proceed to Checkout →
-            </button>
-          </div>
-        </div>
-      )}
+  if (items.length === 0) {
+    return (
+      <div className="animate-fade-in">
+        <PageHeader title="Your cart" />
+        <EmptyState
+          icon={ShoppingCart}
+          title="Your cart is empty"
+          description="Browse the catalogue and add a few things you love."
+          action={<Button onClick={() => navigate('/products')} iconRight={ArrowRight}>Start shopping</Button>}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-fade-in">
+      <PageHeader
+        title="Your cart"
+        subtitle={`${count} item${count === 1 ? '' : 's'} ready for checkout`}
+        actions={<Button variant="ghost" icon={ArrowLeft} onClick={() => navigate('/products')}>Continue shopping</Button>}
+      />
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <Card className="p-4 sm:p-6">
+          <ul className="divide-y divide-slate-100">
+            {items.map((item) => (
+              <CartLine key={item.ProductID} item={item} onQuantity={setQuantity} onRemove={handleRemove} />
+            ))}
+          </ul>
+        </Card>
+        <OrderSummary count={count} total={total}>
+          <Button size="lg" className="w-full" iconRight={ArrowRight} onClick={() => navigate('/checkout')}>
+            Proceed to checkout
+          </Button>
+        </OrderSummary>
+      </div>
     </div>
   );
 };

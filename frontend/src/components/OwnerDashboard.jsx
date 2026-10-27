@@ -1,405 +1,637 @@
-import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, ResponsiveContainer } from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
+import {
+  Boxes, Brain, ChartLine, FlaskConical, IndianRupee, Minus, PackagePlus, Plus, Receipt, RefreshCw, Save, Search, ShoppingBag, TriangleAlert,
+} from 'lucide-react';
+import axios, { apiError } from '../lib/api';
+import { CATEGORIES, LOW_STOCK, formatINR, formatNumber, formatShortDate } from '../lib/format';
+import { useToast } from '../context/ToastContext';
+import { matchLevel } from './CheckoutSuggestions';
+import {
+  Button, Card, CategoryBadge, CategoryTile, EmptyState, Field, Input, Modal, PageHeader, Select, Skeleton, StockBadge, Tabs, cn,
+} from './ui';
 
-const COLORS = ['#6366f1', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6'];
+// Validated categorical slots (fixed order). Colour follows the category, never its rank.
+const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+const CATEGORY_COLOR = Object.fromEntries(CATEGORIES.map((c, i) => [c, SERIES[i]]));
+const colorForCategory = (name, index) => CATEGORY_COLOR[name] || SERIES[(CATEGORIES.length + index) % SERIES.length];
+
+const AXIS_TICK = { fontSize: 11, fill: '#64748b' };
+// Avoids recharts' "width(-1)" warning on the first render, before the container is measured.
+const CHART_INITIAL_SIZE = { width: 320, height: 240 };
+const formatAxisINR = (v) => (v >= 1000 ? `₹${+(v / 1000).toFixed(1)}k` : `₹${v}`);
+const GRID = '#eef2f6';
+
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: ChartLine },
+  { id: 'inventory', label: 'Inventory', icon: Boxes },
+  { id: 'ml', label: 'ML settings', icon: Brain },
+];
+
+const ChartTooltip = ({ active, payload, label, valueLabel, format = formatINR, labelFormat = (l) => l }) => {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg shadow-slate-900/10">
+      <p className="font-medium text-slate-500">{labelFormat(label ?? item.name)}</p>
+      <p className="mt-0.5 font-semibold text-slate-900">
+        {valueLabel}: {format(item.value)}
+      </p>
+    </div>
+  );
+};
+
+const Kpi = ({ icon: Icon, label, value, hint, tone = 'indigo' }) => (
+  <Card className="p-4 sm:p-5">
+    <div className="flex items-center justify-between">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <span className={cn('flex size-8 items-center justify-center rounded-lg', tone === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600')}>
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+    </div>
+    <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{value}</p>
+    {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
+  </Card>
+);
+
+const ChartCard = ({ title, subtitle, children, className }) => (
+  <Card className={cn('p-5', className)}>
+    <h3 className="font-semibold text-slate-900">{title}</h3>
+    {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+    <div className="mt-4">{children}</div>
+  </Card>
+);
+
+const Overview = ({ analytics, products, loading, onRestock }) => {
+  const lowStock = useMemo(() => products.filter((p) => p.Stock <= LOW_STOCK).sort((a, b) => a.Stock - b.Stock), [products]);
+
+  if (loading && !analytics) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+        <Skeleton className="h-80 rounded-2xl sm:col-span-2 lg:col-span-3" />
+        <Skeleton className="h-80 rounded-2xl" />
+      </div>
+    );
+  }
+  if (!analytics) return <EmptyState icon={ChartLine} title="Analytics unavailable" description="We couldn't load store analytics. Try refreshing." />;
+
+  const { kpis, revenueOverTime, topProducts, categoryData } = analytics;
+  const aov = kpis.totalOrders ? kpis.totalRevenue / kpis.totalOrders : 0;
+  const categoryTotal = categoryData.reduce((sum, c) => sum + c.value, 0);
+  const hasSales = kpis.totalOrders > 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <Kpi icon={IndianRupee} label="Revenue" value={formatINR(kpis.totalRevenue)} hint="Completed orders" />
+        <Kpi icon={Receipt} label="Orders" value={formatNumber(kpis.totalOrders)} hint={`Avg ${formatINR(aov)} per order`} />
+        <Kpi icon={ShoppingBag} label="Units sold" value={formatNumber(kpis.totalItemsSold)} hint={`${products.length} products listed`} />
+        <Kpi icon={TriangleAlert} tone="amber" label="Low stock" value={formatNumber(lowStock.length)} hint={`${LOW_STOCK} units or fewer`} />
+      </div>
+
+      {!hasSales ? (
+        <EmptyState icon={ChartLine} title="No sales yet" description="Revenue trends, best sellers and category mix appear here after the first checkout." />
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <ChartCard title="Daily revenue" subtitle="Last 30 days with sales" className="lg:col-span-2">
+              <div className="h-72">
+                <ResponsiveContainer initialDimension={CHART_INITIAL_SIZE}>
+                  <AreaChart data={revenueOverTime} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.18} />
+                        <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} stroke={GRID} />
+                    <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} tickFormatter={formatShortDate} minTickGap={24} />
+                    <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={64} tickFormatter={formatAxisINR} />
+                    <Tooltip content={<ChartTooltip valueLabel="Revenue" labelFormat={formatShortDate} />} cursor={{ stroke: '#cbd5e1' }} />
+                    <Area type="monotone" dataKey="revenue" stroke={SERIES[0]} strokeWidth={2} fill="url(#revFill)" dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: SERIES[0] }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartCard>
+
+            <ChartCard title="Revenue by category" subtitle="Share of completed sales">
+              <div className="h-44">
+                <ResponsiveContainer initialDimension={CHART_INITIAL_SIZE}>
+                  <PieChart>
+                    <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="95%" paddingAngle={0} stroke={categoryData.length > 1 ? '#fff' : 'none'} strokeWidth={2}>
+                      {categoryData.map((c, i) => <Cell key={c.name} fill={colorForCategory(c.name, i)} />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip valueLabel="Revenue" />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <ul className="mt-4 space-y-2 text-sm">
+                {categoryData.map((c, i) => (
+                  <li key={c.name} className="flex items-center gap-2">
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: colorForCategory(c.name, i) }} aria-hidden="true" />
+                    <span className="flex-1 text-slate-700">{c.name}</span>
+                    <span className="font-medium text-slate-900 tabular-nums">{formatINR(c.value)}</span>
+                    <span className="w-10 text-right text-xs text-slate-500 tabular-nums">{categoryTotal ? Math.round((c.value / categoryTotal) * 100) : 0}%</span>
+                  </li>
+                ))}
+              </ul>
+            </ChartCard>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ChartCard title="Best sellers" subtitle="Units sold, top 5">
+              <div className="h-64">
+                <ResponsiveContainer initialDimension={CHART_INITIAL_SIZE}>
+                  <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }} barCategoryGap={10}>
+                    <CartesianGrid horizontal={false} stroke={GRID} />
+                    <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis dataKey="name" type="category" tick={{ ...AXIS_TICK, fill: '#334155' }} tickLine={false} axisLine={false} width={110} />
+                    <Tooltip content={<ChartTooltip valueLabel="Units" format={formatNumber} />} cursor={{ fill: '#f1f5f9' }} />
+                    <Bar dataKey="totalSold" fill={SERIES[0]} radius={[0, 4, 4, 0]} maxBarSize={18} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </ChartCard>
+            <LowStockCard items={lowStock} onRestock={onRestock} />
+          </div>
+        </>
+      )}
+
+      {!hasSales && lowStock.length > 0 && <LowStockCard items={lowStock} onRestock={onRestock} />}
+    </div>
+  );
+};
+
+const LowStockCard = ({ items, onRestock }) => (
+  <ChartCard title="Low stock" subtitle={`Products with ${LOW_STOCK} or fewer units`}>
+    {items.length === 0 ? (
+      <p className="py-10 text-center text-sm text-slate-500">Everything is well stocked.</p>
+    ) : (
+      <ul className="max-h-64 divide-y divide-slate-100 overflow-y-auto pr-1">
+        {items.map((p) => (
+          <li key={p.ProductID} className="flex items-center gap-3 py-2.5">
+            <CategoryTile category={p.Category} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-slate-900">{p.Name}</p>
+              <StockBadge stock={p.Stock} />
+            </div>
+            <Button variant="secondary" size="sm" icon={Plus} onClick={() => onRestock(p)}>10</Button>
+          </li>
+        ))}
+      </ul>
+    )}
+  </ChartCard>
+);
+
+// Edits are held locally and saved on blur/Enter, so typing "120" is one request, not three.
+const NumberCell = ({ value, onCommit, step = 1, min = 0, prefix, label, stepper = false }) => {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = () => {
+    const parsed = step === 1 ? parseInt(draft, 10) : parseFloat(draft);
+    if (Number.isNaN(parsed) || parsed < min) {
+      setDraft(String(value));
+      return;
+    }
+    if (parsed !== value) onCommit(parsed);
+  };
+
+  const input = (
+    <div className="relative">
+      {prefix && <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-xs text-slate-400">{prefix}</span>}
+      <input
+        type="number"
+        inputMode="decimal"
+        min={min}
+        step={step}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setDraft(String(value)); e.currentTarget.blur(); } }}
+        aria-label={label}
+        className={cn(
+          'h-8 border-0 text-sm font-medium text-slate-900 tabular-nums focus:ring-2 focus:ring-indigo-600 focus:outline-none',
+          stepper ? 'w-16 bg-transparent px-1 text-center ring-0 focus:ring-inset' : 'w-24 rounded-lg bg-white pr-2 ring-1 ring-slate-200 ring-inset',
+          prefix ? 'pl-6' : !stepper && 'pl-2.5'
+        )}
+      />
+    </div>
+  );
+  if (!stepper) return input;
+
+  const stepBtn = 'flex w-8 items-center justify-center text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30';
+  return (
+    <div className="inline-flex h-8 items-stretch overflow-hidden rounded-lg bg-white ring-1 ring-slate-200 ring-inset" role="group" aria-label={label}>
+      <button type="button" className={stepBtn} onClick={() => onCommit(value - step)} disabled={value - step < min} aria-label="Decrease">
+        <Minus className="size-3.5" />
+      </button>
+      {input}
+      <button type="button" className={stepBtn} onClick={() => onCommit(value + step)} aria-label="Increase">
+        <Plus className="size-3.5" />
+      </button>
+    </div>
+  );
+};
+
+const Inventory = ({ products, loading, onUpdate, onAdd }) => {
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('All');
+  const [stockFilter, setStockFilter] = useState('all');
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return products.filter((p) => (category === 'All' || p.Category === category)
+      && (!q || p.Name.toLowerCase().includes(q))
+      && (stockFilter === 'all' || (stockFilter === 'low' ? p.Stock <= LOW_STOCK && p.Stock > 0 : p.Stock <= 0)));
+  }, [products, query, category, stockFilter]);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:p-5">
+        <div className="flex-1">
+          <Input icon={Search} type="search" placeholder="Search inventory" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search inventory" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:flex">
+          <Select value={category} onChange={(e) => setCategory(e.target.value)} className="sm:w-40" aria-label="Filter by category">
+            <option value="All">All categories</option>
+            {[...new Set(products.map((p) => p.Category))].map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+          <Select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} className="sm:w-36" aria-label="Filter by stock">
+            <option value="all">Any stock</option>
+            <option value="low">Low stock</option>
+            <option value="out">Out of stock</option>
+          </Select>
+        </div>
+        <Button icon={PackagePlus} onClick={onAdd}>Add product</Button>
+      </div>
+
+      {loading && products.length === 0 ? (
+        <div className="space-y-2 p-5">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12" />)}</div>
+      ) : visible.length === 0 ? (
+        <p className="p-12 text-center text-sm text-slate-500">No products match these filters.</p>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                <tr>
+                  <th className="px-5 py-3">Product</th>
+                  <th className="px-3 py-3">Category</th>
+                  <th className="px-3 py-3">Price</th>
+                  <th className="px-3 py-3">Stock</th>
+                  <th className="px-5 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visible.map((p) => (
+                  <tr key={p.ProductID} className="hover:bg-slate-50/60">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <CategoryTile category={p.Category} size="sm" />
+                        <div>
+                          <p className="font-medium text-slate-900">{p.Name}</p>
+                          <p className="text-xs text-slate-400">#{p.ProductID}{p.Weight ? ` · ${p.Weight} kg` : ''}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3"><CategoryBadge category={p.Category} /></td>
+                    <td className="px-3 py-3"><NumberCell value={p.Price} step={0.01} prefix="₹" label={`Price of ${p.Name}`} onCommit={(v) => onUpdate(p, { price: v })} /></td>
+                    <td className="px-3 py-3">
+                      <NumberCell stepper value={p.Stock} label={`Stock of ${p.Name}`} onCommit={(v) => onUpdate(p, { stock: v })} />
+                    </td>
+                    <td className="px-5 py-3 text-right"><StockBadge stock={p.Stock} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <ul className="divide-y divide-slate-100 md:hidden">
+            {visible.map((p) => (
+              <li key={p.ProductID} className="p-4">
+                <div className="flex items-center gap-3">
+                  <CategoryTile category={p.Category} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-slate-900">{p.Name}</p>
+                    <StockBadge stock={p.Stock} />
+                  </div>
+                  <CategoryBadge category={p.Category} />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <NumberCell value={p.Price} step={0.01} prefix="₹" label={`Price of ${p.Name}`} onCommit={(v) => onUpdate(p, { price: v })} />
+                  <NumberCell stepper value={p.Stock} label={`Stock of ${p.Name}`} onCommit={(v) => onUpdate(p, { stock: v })} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  );
+};
+
+const EMPTY_PRODUCT = { name: '', price: '', stock: '', category: '', weight: '' };
+
+const AddProductModal = ({ open, onClose, onCreated }) => {
+  const [form, setForm] = useState(EMPTY_PRODUCT);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post('/api/products', {
+        name: form.name.trim(),
+        price: Number(form.price),
+        stock: parseInt(form.stock, 10),
+        category: form.category,
+        weight: form.weight === '' ? null : Number(form.weight),
+      });
+      toast.success(`${form.name.trim()} added to inventory`);
+      setForm(EMPTY_PRODUCT);
+      onCreated();
+      onClose();
+    } catch (err) {
+      toast.error('Could not add product', { description: apiError(err) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add product"
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form="add-product" loading={saving} icon={PackagePlus}>Add product</Button>
+        </>
+      )}
+    >
+      <form id="add-product" onSubmit={submit} className="space-y-4">
+        <Field label="Name" htmlFor="p-name">
+          <Input id="p-name" value={form.name} onChange={set('name')} required placeholder="e.g. Green Tea" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Price (₹)" htmlFor="p-price">
+            <Input id="p-price" type="number" min="0" step="0.01" value={form.price} onChange={set('price')} required />
+          </Field>
+          <Field label="Stock" htmlFor="p-stock">
+            <Input id="p-stock" type="number" min="0" step="1" value={form.stock} onChange={set('stock')} required />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Category" htmlFor="p-category">
+            <Select id="p-category" value={form.category} onChange={set('category')} required>
+              <option value="" disabled>Select…</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
+          <Field label="Weight (kg)" htmlFor="p-weight">
+            <Input id="p-weight" type="number" min="0" step="0.01" value={form.weight} onChange={set('weight')} placeholder="Optional" />
+          </Field>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
+const Slider = ({ id, label, help, value, min, max, onChange }) => (
+  <div>
+    <div className="flex items-baseline justify-between">
+      <label htmlFor={id} className="text-sm font-medium text-slate-700">{label}</label>
+      <span className="text-sm font-semibold text-indigo-600 tabular-nums">{Math.round(value * 100)}%</span>
+    </div>
+    <p className="mb-3 text-xs text-slate-500">{help}</p>
+    <input id={id} type="range" min={min} max={max} step="0.01" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} className="w-full accent-indigo-600" />
+  </div>
+);
+
+const META_LABELS = {
+  algorithm: 'Algorithm', totalTransactions: 'Transactions', totalFrequentItemsets: 'Frequent itemsets', totalRules: 'Rules', minSupport: 'Min support', minConfidence: 'Min confidence', error: 'Error',
+};
+
+const MlLab = ({ products, settings, setSettings, onSave, saving }) => {
+  const [selected, setSelected] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState(null);
+
+  const byCategory = useMemo(() => products.reduce((acc, p) => ({ ...acc, [p.Category]: [...(acc[p.Category] || []), p] }), {}), [products]);
+  const toggle = (id) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const run = async () => {
+    setRunning(true);
+    setResults(null);
+    try {
+      const res = await axios.post('/api/checkout-recommendations', { items: selected, minSupport: settings.minSupport, minConfidence: settings.minConfidence });
+      setResults(res.data);
+    } catch {
+      setResults({ recommendations: [], metadata: { error: 'Failed to run algorithm' } });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+      <Card className="h-fit p-5 lg:sticky lg:top-24">
+        <div className="mb-5 flex items-center gap-3">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><Brain className="size-4.5" aria-hidden="true" /></span>
+          <div>
+            <h3 className="font-semibold text-slate-900">Apriori thresholds</h3>
+            <p className="text-xs text-slate-500">Applied to every customer checkout</p>
+          </div>
+        </div>
+        <div className="space-y-6">
+          <Slider id="ml-support" label="Minimum support" help="How often items must appear together across all orders." value={settings.minSupport} min="0.01" max="0.5" onChange={(v) => setSettings((s) => ({ ...s, minSupport: v }))} />
+          <Slider id="ml-confidence" label="Minimum confidence" help="Probability a shopper buys B when A is already in the cart." value={settings.minConfidence} min="0.01" max="1" onChange={(v) => setSettings((s) => ({ ...s, minConfidence: v }))} />
+        </div>
+        <Button variant="success" icon={Save} className="mt-6 w-full" loading={saving} onClick={onSave}>Save global settings</Button>
+      </Card>
+
+      <div className="space-y-6">
+        <Card className="p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-slate-900">Test with a simulated cart</h3>
+              <p className="text-xs text-slate-500">{selected.length ? `${selected.length} product${selected.length === 1 ? '' : 's'} selected` : 'Pick products a customer might have in their cart'}</p>
+            </div>
+            <div className="flex gap-2">
+              {selected.length > 0 && <Button variant="ghost" size="sm" onClick={() => setSelected([])}>Clear</Button>}
+              <Button size="sm" icon={FlaskConical} onClick={run} loading={running} disabled={selected.length === 0}>Run Apriori</Button>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {Object.entries(byCategory).map(([cat, list]) => (
+              <div key={cat}>
+                <p className="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase">{cat}</p>
+                <div className="flex flex-wrap gap-2">
+                  {list.map((p) => (
+                    <button
+                      key={p.ProductID}
+                      type="button"
+                      onClick={() => toggle(p.ProductID)}
+                      aria-pressed={selected.includes(p.ProductID)}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-medium transition',
+                        selected.includes(p.ProductID) ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 ring-1 ring-slate-200 ring-inset hover:ring-indigo-300'
+                      )}
+                    >
+                      {p.Name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {(running || results) && (
+          <Card className="p-5">
+            <h3 className="font-semibold text-slate-900">Results</h3>
+            {running ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">{Array.from({ length: 2 }, (_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
+            ) : (
+              <>
+                {results.metadata && Object.keys(results.metadata).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Object.entries(results.metadata).map(([key, val]) => (
+                      <span key={key} className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ring-1 ring-inset', key === 'error' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200')}>
+                        {META_LABELS[key] || key}
+                        <strong className="font-semibold text-slate-900">{key.startsWith('min') ? `${Math.round(val * 100)}%` : String(val)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {results.recommendations?.length ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {results.recommendations.map((rec) => {
+                      const level = matchLevel(rec.confidence);
+                      return (
+                        <div key={rec.productId} className="rounded-2xl p-4 ring-1 ring-slate-200 ring-inset">
+                          <div className="flex items-start gap-3">
+                            <CategoryTile category={rec.category} size="sm" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-slate-900">{rec.name}</p>
+                              <p className="text-sm text-slate-500">{formatINR(rec.price)}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div className={cn('h-full rounded-full', level.bar)} style={{ width: `${Math.min(rec.confidence * 100, 100)}%` }} />
+                          </div>
+                          <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                            <div><dt className="text-slate-400">Confidence</dt><dd className="font-semibold text-slate-800">{(rec.confidence * 100).toFixed(1)}%</dd></div>
+                            <div><dt className="text-slate-400">Support</dt><dd className="font-semibold text-slate-800">{(rec.support * 100).toFixed(1)}%</dd></div>
+                            <div><dt className="text-slate-400">Lift</dt><dd className="font-semibold text-slate-800">{rec.lift?.toFixed(2)}×</dd></div>
+                          </dl>
+                          {rec.antecedentNames && (
+                            <p className="mt-2 truncate text-xs text-slate-500" title={`${rec.antecedentNames.join(' + ')} → ${rec.name}`}>
+                              {rec.antecedentNames.join(' + ')} → <span className="font-medium text-slate-700">{rec.name}</span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-6 text-center text-sm text-slate-500">No rules matched. Lower the thresholds or pick different products.</p>
+                )}
+              </>
+            )}
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const OwnerDashboard = () => {
-    const [products, setProducts] = useState([]);
-    const [newProduct, setNewProduct] = useState({ name: '', price: '', stock: '', category: '', weight: '' });
-    const [mlMinSupport, setMlMinSupport] = useState(0.05);
-    const [mlMinConfidence, setMlMinConfidence] = useState(0.3);
-    const [mlTestItems, setMlTestItems] = useState([]);
-    const [mlLoading, setMlLoading] = useState(false);
-    const [mlResults, setMlResults] = useState(null);
-    const [analyticsData, setAnalyticsData] = useState(null);
-    const navigate = useNavigate();
+  const [tab, setTab] = useState('overview');
+  const [products, setProducts] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [settings, setSettings] = useState({ minSupport: 0.05, minConfidence: 0.1 });
+  const [loading, setLoading] = useState(true);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const toast = useToast();
 
-    const toggleMlTestItem = (productId) => {
-        setMlTestItems(prev =>
-            prev.includes(productId)
-                ? prev.filter(id => id !== productId)
-                : [...prev, productId]
-        );
-    };
+  const fetchProducts = () => axios.get('/api/products').then((res) => setProducts(res.data));
 
-    const runMlTest = async () => {
-        setMlLoading(true);
-        setMlResults(null);
-        try {
-            const selectedProducts = products.filter(p => mlTestItems.includes(p.ProductID));
-            const res = await axios.post('/api/checkout-recommendations', {
-                items: selectedProducts.map(p => p.ProductID),
-                minSupport: mlMinSupport,
-                minConfidence: mlMinConfidence
-            });
-            setMlResults(res.data);
-        } catch (err) {
-            console.error('ML test error:', err);
-            setMlResults({ recommendations: [], metadata: { error: 'Failed to run algorithm' } });
-        }
-        setMlLoading(false);
-    };
+  const refresh = async () => {
+    setLoading(true);
+    const [prod, stats, ml] = await Promise.allSettled([
+      fetchProducts(),
+      axios.get('/api/analytics'),
+      axios.get('/api/settings/ml'),
+    ]);
+    if (stats.status === 'fulfilled') setAnalytics(stats.value.data);
+    if (ml.status === 'fulfilled') {
+      setSettings((s) => ({
+        minSupport: ml.value.data.minSupport ?? s.minSupport,
+        minConfidence: ml.value.data.minConfidence ?? s.minConfidence,
+      }));
+    }
+    if (prod.status === 'rejected' || stats.status === 'rejected') toast.error('Some dashboard data failed to load');
+    setLoading(false);
+  };
 
-    const fetchProducts = async () => {
-        try {
-            const res = await axios.get('/api/products');
-            setProducts(res.data);
-        } catch (err) {
-            console.error('Error fetching products:', err);
-        }
-    };
+  useEffect(() => {
+    refresh();
+  }, []);
 
-    const fetchMlSettings = async () => {
-        try {
-            const res = await axios.get('/api/settings/ml');
-            if (res.data.minSupport != null) setMlMinSupport(res.data.minSupport);
-            if (res.data.minConfidence != null) setMlMinConfidence(res.data.minConfidence);
-        } catch (err) {
-            console.error('Error fetching ML settings:', err);
-        }
-    };
+  const updateProduct = async (product, patch) => {
+    const before = products;
+    const fields = { ...(patch.price != null && { Price: patch.price }), ...(patch.stock != null && { Stock: patch.stock }) };
+    setProducts((prev) => prev.map((p) => (p.ProductID === product.ProductID ? { ...p, ...fields } : p)));
+    try {
+      await axios.put(`/api/products/${product.ProductID}`, patch);
+    } catch (err) {
+      setProducts(before);
+      toast.error(`Couldn't update ${product.Name}`, { description: apiError(err) });
+    }
+  };
 
-    const fetchAnalytics = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/analytics', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setAnalyticsData(res.data);
-        } catch (err) {
-            console.error('Error fetching analytics:', err);
-        }
-    };
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await axios.put('/api/settings/ml', settings);
+      toast.success('ML settings saved', { description: 'Customer checkouts now use these thresholds.' });
+    } catch (err) {
+      toast.error('Failed to save settings', { description: apiError(err) });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
-    const saveMlSettings = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            await axios.put('/api/settings/ml', { minSupport: mlMinSupport, minConfidence: mlMinConfidence }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            alert('ML Settings saved globally! These will now apply to the customer checkout pages.');
-        } catch (err) {
-            alert('Failed to save settings');
-            console.error(err);
-        }
-    };
+  return (
+    <div className="animate-fade-in">
+      <PageHeader
+        eyebrow="Store owner"
+        title="Dashboard"
+        subtitle="Sales performance, inventory and recommendation tuning."
+        actions={<Button variant="secondary" icon={RefreshCw} onClick={refresh} loading={loading}>Refresh</Button>}
+      />
+      <div className="scrollbar-none -mx-4 mb-6 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <Tabs tabs={TABS} value={tab} onChange={setTab} className="min-w-max" />
+      </div>
 
-    useEffect(() => {
-        fetchProducts();
-        fetchMlSettings();
-        fetchAnalytics();
-    }, []);
+      {tab === 'overview' && <Overview analytics={analytics} products={products} loading={loading} onRestock={(p) => updateProduct(p, { stock: p.Stock + 10 })} />}
+      {tab === 'inventory' && <Inventory products={products} loading={loading} onUpdate={updateProduct} onAdd={() => setAddOpen(true)} />}
+      {tab === 'ml' && <MlLab products={products} settings={settings} setSettings={setSettings} onSave={saveSettings} saving={savingSettings} />}
 
-    const handleUpdateProduct = async (id, field, value) => {
-        try {
-            const token = localStorage.getItem('token');
-            await axios.put(`/api/products/${id}`, { [field]: value }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            fetchProducts();
-        } catch (err) {
-            alert('Failed to update product');
-        }
-    };
-
-    const handleAddProduct = async (e) => {
-        e.preventDefault();
-        try {
-            const token = localStorage.getItem('token');
-            await axios.post('/api/products', newProduct, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            alert('Product added successfully!');
-            setNewProduct({ name: '', price: '', stock: '', category: '', weight: '' });
-            fetchProducts();
-        } catch (err) {
-            alert('Failed to add product');
-        }
-    };
-
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userId');
-        navigate('/');
-    };
-
-    return (
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-                <div>
-                    <h2 className="text-3xl font-black text-slate-800">Owner Dashboard</h2>
-                    <span className="inline-block mt-1 text-xs font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full">Admin Panel</span>
-                </div>
-                <button onClick={handleLogout} className="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-xl font-bold transition-all">
-                    Logout
-                </button>
-            </div>
-
-            {/* Analytics */}
-            {analyticsData && (
-                <div className="mb-10">
-                    {/* KPI Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
-                        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl shrink-0">💰</div>
-                            <div>
-                                <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Revenue</p>
-                                <h3 className="text-2xl font-black text-slate-800">₹{analyticsData.kpis.totalRevenue?.toLocaleString() || 0}</h3>
-                            </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl shrink-0">📦</div>
-                            <div>
-                                <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Orders</p>
-                                <h3 className="text-2xl font-black text-slate-800">{analyticsData.kpis.totalOrders}</h3>
-                            </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex items-center gap-5">
-                            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl shrink-0">🛍️</div>
-                            <div>
-                                <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Items Sold</p>
-                                <h3 className="text-2xl font-black text-slate-800">{analyticsData.kpis.totalItemsSold}</h3>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Charts */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                            <h3 className="font-bold text-slate-800 mb-4">Daily Revenue Trend</h3>
-                            <div className="h-72 w-full">
-                                <ResponsiveContainer>
-                                    <LineChart data={analyticsData.revenueOverTime} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="date" tick={{fontSize: 11, fill: '#94a3b8'}} axisLine={{stroke: '#e2e8f0'}} tickLine={false} />
-                                        <YAxis tick={{fontSize: 11, fill: '#94a3b8'}} axisLine={{stroke: '#e2e8f0'}} tickLine={false} tickFormatter={(v) => `₹${v}`} />
-                                        <Tooltip formatter={(v) => [`₹${v}`, 'Revenue']} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} />
-                                        <Line type="monotone" dataKey="revenue" stroke="#6366f1" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                            <h3 className="font-bold text-slate-800 mb-4">Top Products</h3>
-                            <div className="h-72 w-full">
-                                <ResponsiveContainer>
-                                    <BarChart data={analyticsData.topProducts} layout="vertical" margin={{ top: 5, right: 20, left: 30, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                                        <XAxis type="number" tick={{fontSize: 11, fill: '#94a3b8'}} axisLine={{stroke: '#e2e8f0'}} tickLine={false} />
-                                        <YAxis dataKey="name" type="category" tick={{fontSize: 10, fill: '#334155'}} axisLine={{stroke: '#e2e8f0'}} tickLine={false} width={70} />
-                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} />
-                                        <Bar dataKey="totalSold" fill="#06b6d4" barSize={16} radius={[0, 6, 6, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm mb-8">
-                        <h3 className="font-bold text-slate-800 mb-4">Revenue by Category</h3>
-                        <div className="h-72 w-full">
-                            <ResponsiveContainer>
-                                <PieChart>
-                                    <Pie data={analyticsData.categoryData} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} outerRadius={90} fill="#8884d8" dataKey="value">
-                                        {analyticsData.categoryData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip formatter={(v) => [`₹${v}`, 'Revenue']} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }} />
-                                    <Legend verticalAlign="bottom" height={36} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add Product + Inventory */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-                <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm h-fit">
-                    <h3 className="font-bold text-slate-800 mb-6 pb-3 border-b-2 border-indigo-500 inline-block">Add New Product</h3>
-                    <form onSubmit={handleAddProduct} className="flex flex-col gap-4 mt-4">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-600 mb-1">Name</label>
-                            <input type="text" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} required className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-sm font-bold text-slate-600 mb-1">Price (₹)</label>
-                                <input type="number" value={newProduct.price} onChange={e => setNewProduct({ ...newProduct, price: e.target.value })} required className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-600 mb-1">Stock</label>
-                                <input type="number" value={newProduct.stock} onChange={e => setNewProduct({ ...newProduct, stock: e.target.value })} required className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-600 mb-1">Category</label>
-                            <select value={newProduct.category} onChange={e => setNewProduct({ ...newProduct, category: e.target.value })} required className="w-full px-4 py-2.5 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="">Select Category</option>
-                                <option value="Groceries">Groceries</option>
-                                <option value="Sports">Sports</option>
-                                <option value="Medical">Medical</option>
-                                <option value="Electrical">Electrical</option>
-                                <option value="Beauty">Beauty</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-600 mb-1">Weight (kg)</label>
-                            <input type="number" step="0.01" value={newProduct.weight} onChange={e => setNewProduct({ ...newProduct, weight: e.target.value })} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                        </div>
-                        <button type="submit" className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-md transition-all mt-2">
-                            Add Product
-                        </button>
-                    </form>
-                </div>
-
-                {/* Inventory */}
-                <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                    <h3 className="font-bold text-slate-800 mb-6 pb-3 border-b-2 border-amber-500 inline-block">Manage Inventory</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
-                        {products.map(product => (
-                            <div key={product.ProductID} className="bg-slate-50 rounded-xl p-4 border border-slate-100 relative">
-                                <span className="absolute -top-2 right-3 text-[10px] font-bold uppercase bg-slate-700 text-white px-2 py-0.5 rounded-full">{product.Category}</span>
-                                <h4 className="font-bold text-slate-800 mb-4 pr-16 text-sm">{product.Name}</h4>
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
-                                        <span className="text-xs font-bold text-slate-400">Price (₹)</span>
-                                        <div className="flex items-center">
-                                            <button onClick={() => handleUpdateProduct(product.ProductID, 'price', Math.max(0, product.Price - 10))} className="w-7 h-7 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-l-lg text-slate-600 font-bold text-sm transition-colors">-</button>
-                                            <input type="number" value={product.Price} onChange={(e) => handleUpdateProduct(product.ProductID, 'price', Number(e.target.value))} className="w-14 text-center border-y border-slate-200 py-1 text-sm font-bold text-slate-700 focus:outline-none" />
-                                            <button onClick={() => handleUpdateProduct(product.ProductID, 'price', product.Price + 10)} className="w-7 h-7 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-r-lg text-slate-600 font-bold text-sm transition-colors">+</button>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100">
-                                        <span className="text-xs font-bold text-slate-400">Stock</span>
-                                        <div className="flex items-center">
-                                            <button onClick={() => handleUpdateProduct(product.ProductID, 'stock', Math.max(0, product.Stock - 1))} disabled={product.Stock <= 0} className="w-7 h-7 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-l-lg text-slate-600 font-bold text-sm transition-colors disabled:opacity-30">-</button>
-                                            <input type="number" value={product.Stock} onChange={(e) => handleUpdateProduct(product.ProductID, 'stock', Number(e.target.value))} className={`w-14 text-center border-y border-slate-200 py-1 text-sm font-bold focus:outline-none ${product.Stock <= 5 ? 'text-red-500' : 'text-slate-700'}`} />
-                                            <button onClick={() => handleUpdateProduct(product.ProductID, 'stock', product.Stock + 1)} className="w-7 h-7 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-r-lg text-slate-600 font-bold text-sm transition-colors">+</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            {/* ML Settings */}
-            <div className="bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 rounded-3xl p-6 sm:p-8 border border-indigo-100/50 shadow-sm">
-                <div className="flex items-center gap-4 mb-8">
-                    <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-indigo-500/30 shrink-0">🧠</div>
-                    <div>
-                        <h3 className="text-xl font-bold text-indigo-900">ML Recommendation Settings</h3>
-                        <p className="text-sm text-indigo-600 font-medium">Configure Apriori Algorithm & Association Rule Mining</p>
-                    </div>
-                </div>
-
-                <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-white/50 mb-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Min Support</label>
-                            <p className="text-xs text-slate-500 mb-3">(How frequently items appear together in transactions)</p>
-                            <div className="flex items-center gap-4">
-                                <input type="range" min="0.01" max="0.5" step="0.01" value={mlMinSupport} onChange={e => setMlMinSupport(parseFloat(e.target.value))} className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
-                                <span className="font-bold text-indigo-700 min-w-[3rem] text-right">{(mlMinSupport * 100).toFixed(0)}%</span>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Min Confidence</label>
-                            <p className="text-xs text-slate-500 mb-3">(Probability of buying B given A is already in cart)</p>
-                            <div className="flex items-center gap-4">
-                                <input type="range" min="0.01" max="1.0" step="0.01" value={mlMinConfidence} onChange={e => setMlMinConfidence(parseFloat(e.target.value))} className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
-                                <span className="font-bold text-indigo-700 min-w-[3rem] text-right">{(mlMinConfidence * 100).toFixed(0)}%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Simulated Cart */}
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-3">Simulated Cart (select products to test)</label>
-                        <div className="flex flex-wrap gap-2 mb-5">
-                            {products.slice(0, 15).map(p => (
-                                <button
-                                    key={p.ProductID}
-                                    onClick={() => toggleMlTestItem(p.ProductID)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
-                                        mlTestItems.includes(p.ProductID)
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/25'
-                                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-                                    }`}
-                                >
-                                    {p.Name}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex flex-wrap gap-3">
-                            <button
-                                onClick={runMlTest}
-                                disabled={mlTestItems.length === 0 || mlLoading}
-                                className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-purple-600 hover:bg-purple-700 text-white shadow-md"
-                            >
-                                {mlLoading ? '⏳ Running Apriori...' : '🔬 Run Algorithm Test'}
-                            </button>
-                            <button
-                                onClick={saveMlSettings}
-                                className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-600 text-white shadow-md transition-all"
-                            >
-                                💾 Save Global ML Settings
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ML Results */}
-                {mlResults && (
-                    <div className="bg-white/80 rounded-2xl p-6 border border-indigo-100/50">
-                        {mlResults.metadata && (
-                            <div className="flex flex-wrap gap-2 mb-5">
-                                {Object.entries(mlResults.metadata).map(([key, val]) => (
-                                    <span key={key} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-full px-3 py-1 text-xs">
-                                        <span className="text-slate-400 font-medium">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                                        <span className="font-bold text-slate-700">{val}</span>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-
-                        {mlResults.recommendations && mlResults.recommendations.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {mlResults.recommendations.map((rec, i) => (
-                                    <div key={i} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div>
-                                                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{rec.category}</span>
-                                                <h4 className="font-bold text-slate-800 mt-1 text-sm">{rec.name}</h4>
-                                                <p className="font-black text-blue-600">₹{rec.price}</p>
-                                            </div>
-                                            <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${rec.confidence >= 0.7 ? 'bg-emerald-500' : rec.confidence >= 0.4 ? 'bg-amber-500' : 'bg-slate-400'}`}>
-                                                {(rec.confidence * 100).toFixed(1)}%
-                                            </span>
-                                        </div>
-                                        <div className="text-[11px] text-slate-500 space-y-0.5">
-                                            <span className="block">Support: <strong className="text-slate-700">{(rec.support * 100).toFixed(1)}%</strong></span>
-                                            <span className="block">Lift: <strong className="text-purple-600">{rec.lift?.toFixed(2)}x</strong></span>
-                                            {rec.antecedentNames && <span className="block">Rule: <strong>{rec.antecedentNames.join(' + ')}</strong> → {rec.name}</span>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-center text-slate-400 py-6">No recommendations found. Try lowering thresholds or selecting different products.</p>
-                        )}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+      <AddProductModal open={addOpen} onClose={() => setAddOpen(false)} onCreated={fetchProducts} />
+    </div>
+  );
 };
 
 export default OwnerDashboard;

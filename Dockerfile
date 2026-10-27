@@ -30,6 +30,11 @@ RUN npm run build
 # Set working directory back to backend
 WORKDIR /app/backend
 
+# Alpine ships the interpreter as python3; the ML routes spawn PYTHON_PATH.
+ENV NODE_ENV=production \
+    PYTHON_PATH=python3 \
+    PORT=7860
+
 # Expose port
 EXPOSE 7860
 

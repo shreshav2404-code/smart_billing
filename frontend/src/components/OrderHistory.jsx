@@ -1,97 +1,111 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowRight, CalendarDays, IndianRupee, Package, Receipt, RefreshCw, ShoppingBag } from 'lucide-react';
+import axios, { apiError } from '../lib/api';
+import { formatDateTime, formatINR, formatNumber } from '../lib/format';
+import { Button, Card, EmptyState, PageHeader, Skeleton, cn } from './ui';
+
+const STATUS_STYLES = {
+  completed: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  pending: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+};
+
+const Stat = ({ icon: Icon, label, value }) => (
+  <Card className="flex items-center gap-4 p-4 sm:p-5">
+    <span className="flex size-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+      <Icon className="size-5" aria-hidden="true" />
+    </span>
+    <div>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="text-lg font-bold tracking-tight text-slate-900 tabular-nums">{value}</p>
+    </div>
+  </Card>
+);
 
 const OrderHistory = () => {
   const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('userId');
-    navigate('/');
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.get('/api/orders');
+      setOrders(res.data);
+    } catch (err) {
+      setError(apiError(err, 'Could not load your orders.'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/login');
-        return;
-      }
-      try {
-        const res = await axios.get('/api/orders', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setOrders(res.data);
-      } catch (err) {
-        console.error('Error fetching orders:', err);
-      }
-    };
-    fetchOrders();
-  }, [navigate]);
+    load();
+  }, []);
+
+  const spent = orders.reduce((sum, o) => sum + (o.TotalAmount || 0), 0);
+  const units = orders.reduce((sum, o) => sum + (o.ItemCount || 0), 0);
 
   return (
-    <div className="max-w-4xl mx-auto py-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <h2 className="text-3xl font-bold text-slate-800">My Order History</h2>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => navigate('/products')} 
-            className="px-5 py-2.5 bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 font-bold rounded-xl shadow-sm transition-all"
-          >
-            Back to Shop
-          </button>
-          <button 
-            onClick={handleLogout} 
-            className="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 hover:border-red-200 font-bold rounded-xl shadow-sm transition-all"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
+    <div className="animate-fade-in">
+      <PageHeader
+        title="Order history"
+        subtitle="Every purchase, with its gate verification status."
+        actions={<Button variant="secondary" icon={RefreshCw} onClick={load} loading={loading}>Refresh</Button>}
+      />
 
-      {orders.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center shadow-sm border border-slate-100">
-          <span className="text-6xl mb-4 block">📦</span>
-          <p className="text-xl text-slate-600 font-semibold mb-6">No orders found yet.</p>
-          <button 
-            onClick={() => navigate('/products')} 
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all"
-          >
-            Start Shopping
-          </button>
+      {error ? (
+        <EmptyState icon={Receipt} title="Couldn't load orders" description={error} action={<Button variant="secondary" onClick={load}>Try again</Button>} />
+      ) : loading && orders.length === 0 ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
         </div>
+      ) : orders.length === 0 ? (
+        <EmptyState
+          icon={ShoppingBag}
+          title="No orders yet"
+          description="When you check out, your receipts will show up here."
+          action={<Button onClick={() => navigate('/products')} iconRight={ArrowRight}>Start shopping</Button>}
+        />
       ) : (
-        <div className="space-y-4">
-          {orders.map((order) => (
-            <div key={order.OrderID} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                <span className="font-bold text-slate-800 text-lg">Order #{order.OrderID}</span>
-                <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                  order.Status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                }`}>
-                  {order.Status}
-                </span>
-              </div>
-              <div className="flex flex-wrap justify-between items-center bg-slate-50 p-4 rounded-xl mb-4 gap-4">
-                <div>
-                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Date & Time</p>
-                  <p className="text-sm font-semibold text-slate-700">{new Date(order.CreatedAt).toLocaleDateString()} at {new Date(order.CreatedAt).toLocaleTimeString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Items</p>
-                  <p className="text-sm font-semibold text-slate-700">{order.ItemCount}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-500 uppercase font-bold mb-1">Total</p>
-                  <p className="text-xl font-black text-blue-600">₹{order.TotalAmount}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="mb-6 grid gap-3 sm:grid-cols-3">
+            <Stat icon={Receipt} label="Orders" value={formatNumber(orders.length)} />
+            <Stat icon={IndianRupee} label="Total spent" value={formatINR(spent)} />
+            <Stat icon={Package} label="Items bought" value={formatNumber(units)} />
+          </div>
+          <ul className="space-y-3">
+            {orders.map((order) => (
+              <li key={order.OrderID}>
+                <Card className="p-4 transition hover:shadow-md sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-900">Order #{order.OrderID}</h3>
+                        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ring-1 ring-inset', STATUS_STYLES[order.Status] || 'bg-slate-100 text-slate-600 ring-slate-500/20')}>
+                          {order.Status}
+                        </span>
+                      </div>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                        <CalendarDays className="size-3.5" aria-hidden="true" />
+                        {formatDateTime(order.CreatedAt)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold tracking-tight text-slate-900 tabular-nums">{formatINR(order.TotalAmount)}</p>
+                      <p className="text-xs text-slate-500">{order.ItemCount} item{order.ItemCount === 1 ? '' : 's'}</p>
+                    </div>
+                  </div>
+                  {order.ItemSummary && (
+                    <p className="mt-3 line-clamp-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">{order.ItemSummary}</p>
+                  )}
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
