@@ -11,11 +11,28 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           lfs: true
+      - name: Check Hugging Face token
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN is empty. Add it under Settings > Secrets and variables > Actions > Repository secrets."
+            exit 1
+          fi
+          resp=$(curl -sS -H "Authorization: Bearer $HF_TOKEN" https://huggingface.co/api/whoami-v2)
+          user=$(echo "$resp" | jq -r '.name // empty')
+          if [ -z "$user" ]; then
+            echo "::error::Hugging Face rejected HF_TOKEN ($(echo "$resp" | jq -r '.error // "unknown error"')). Create a new Write token and update the secret."
+            exit 1
+          fi
+          echo "Token owner: $user (role: $(echo "$resp" | jq -r '.auth.accessToken.role // "unknown"'))"
+          echo "Organizations: $(echo "$resp" | jq -r '[.orgs[]?.name] | join(", ")')"
+          echo "HF_USER=$user" >> "$GITHUB_ENV"
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://casheww:$HF_TOKEN@huggingface.co/spaces/smartbill-keshu/me HEAD:main --force
+        run: git push "https://$HF_USER:$HF_TOKEN@huggingface.co/spaces/smartbill-keshu/me" HEAD:main --force
